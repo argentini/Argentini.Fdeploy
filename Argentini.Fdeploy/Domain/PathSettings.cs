@@ -1,6 +1,6 @@
 namespace Argentini.Fdeploy.Domain;
 
-public class PathSettings
+public sealed class PathSettings
 {
     public string RemoteRootPath { get; set; } = string.Empty;
 

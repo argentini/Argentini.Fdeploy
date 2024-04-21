@@ -11,29 +11,10 @@ public sealed class FdeployAppState
     public bool HelpMode { get; set; }
 
     #endregion
-
-    #region Constants
-
-    public static int MaxConsoleWidth => GetMaxConsoleWidth();
-	
-    private static int GetMaxConsoleWidth()
-    {
-        try
-        {
-            return Console.WindowWidth - 1;
-        }
-        catch
-        {
-            return 78;
-        }
-    }
-
-    public static string CliErrorPrefix => "Fdeploy => ";
-
-    #endregion
-
+    
     #region App State Properties
 
+    public CancellationTokenSource CancellationTokenSource { get; set; } = new();
     public List<string> Exceptions { get; } = [];
     public List<string> CliArguments { get; } = [];
     public FdeploySettings Settings { get; set; } = new();
@@ -42,11 +23,8 @@ public sealed class FdeployAppState
 
     #endregion
 
-    public FdeployAppState(IEnumerable<string>? args, CancellationTokenSource cancellationToken)
+    public FdeployAppState(IEnumerable<string>? args)
     {
-        if (cancellationToken.IsCancellationRequested)
-            return;
-        
         #region Process Arguments
         
         CliArguments.AddRange(args ?? []);
@@ -102,14 +80,14 @@ public sealed class FdeployAppState
         if (File.Exists(YamlProjectFilePath) == false)
         {
             Exceptions.Add($"Could not find project file `{YamlProjectFilePath}`");
-            cancellationToken.Cancel();
+            CancellationTokenSource.Cancel();
             return;
         }
 
         if (YamlProjectFilePath.IndexOf(Path.DirectorySeparatorChar) < 0)
         {
             Exceptions.Add($"Invalid project file path `{YamlProjectFilePath}`");
-            cancellationToken.Cancel();
+            CancellationTokenSource.Cancel();
             return;
         }
             
@@ -146,65 +124,6 @@ public sealed class FdeployAppState
         #endregion
     }
     
-    public async ValueTask<string> GetEmbeddedYamlPathAsync(CancellationTokenSource cancellationToken)
-    {
-        var workingPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
-
-        while (workingPath.LastIndexOf(Path.DirectorySeparatorChar) > -1)
-        {
-            workingPath = workingPath[..workingPath.LastIndexOf(Path.DirectorySeparatorChar)];
-            
-#if DEBUG
-            if (Directory.Exists(Path.Combine(workingPath, "yaml")) == false)
-                continue;
-
-            var tempPath = workingPath; 
-			
-            workingPath = Path.Combine(tempPath, "yaml");
-#else
-			if (Directory.Exists(Path.Combine(workingPath, "contentFiles")) == false)
-				continue;
-		
-			var tempPath = workingPath; 
-
-			workingPath = Path.Combine(tempPath, "contentFiles", "any", "any", "yaml");
-#endif
-            break;
-        }
-
-        // ReSharper disable once InvertIf
-        if (string.IsNullOrEmpty(workingPath) || Directory.Exists(workingPath) == false)
-        {
-            Exceptions.Add("Embedded YAML resources cannot be found.");
-            await cancellationToken.CancelAsync();
-            return string.Empty;
-        }
-        
-        return workingPath;
-    }
-
-    public async ValueTask OutputExceptionsAsync()
-    {
-        await Console.Out.WriteLineAsync();
-
-        foreach (var message in Exceptions)
-            await Console.Out.WriteLineAsync($"{CliErrorPrefix}{message}");
-        
-        await Console.Out.WriteLineAsync();
-    }
-
-    public static async ValueTask ColonOut(string topic, string message)
-    {
-        const int maxTopicLength = 20;
-
-        if (topic.Length >= maxTopicLength)
-            await Console.Out.WriteAsync($"{topic[..maxTopicLength]}");
-        else
-            await Console.Out.WriteAsync($"{topic}{" ".Repeat(maxTopicLength - topic.Length)}");
-        
-        await Console.Out.WriteLineAsync($" : {message}");
-    }
-
     public static string NormalizePath(string path)
     {
         return path.SetNativePathSeparators().Trim(Path.DirectorySeparatorChar);

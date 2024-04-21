@@ -1,6 +1,6 @@
 namespace Argentini.Fdeploy.Domain;
 
-public class ProjectSettings
+public sealed class ProjectSettings
 {
     public string ProjectFilePath { get; set; } = string.Empty;
     public string EnvironmentName { get; set; } = "Production";
