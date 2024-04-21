@@ -8,6 +8,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <PackageReference Include="CliWrap" Version="3.6.6" />
       <PackageReference Include="Cocona" Version="2.2.0" />
       <PackageReference Include="YamlDotNet" Version="15.1.2" />
     </ItemGroup>
