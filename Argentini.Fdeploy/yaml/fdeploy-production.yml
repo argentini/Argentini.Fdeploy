@@ -13,14 +13,14 @@ OverwriteWebConfig: true
 TakeServerOffline: true
 
 # Seconds to wait after taking the server offline; default is 10
-ServerOfflineDelay: 10
+ServerOfflineDelaySeconds: 10
 
 # Seconds to wait after a failed write; default is 10
-WriteRetryDelay: 10
+WriteRetryDelaySeconds: 10
 
-Credentials:
+ServerConnection:
     
-    Server: 127.0.0.1
+    ServerAddress: 127.0.0.1
     ShareName: D$
     Domain: domain
     UserName: username
@@ -34,11 +34,11 @@ Project:
     # .NET version to target; default is 8.0
     TargetFramework: 8.0
 
-    # Environment name; default is "Staging"
+    # Environment name; default is "Production"
     EnvironmentName: Production
 
     # Configuration; default is "Release"
-    Configuration: Release
+    BuildConfiguration: Release
 
 Paths:
 
