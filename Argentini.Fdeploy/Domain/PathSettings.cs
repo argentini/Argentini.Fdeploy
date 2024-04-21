@@ -4,12 +4,12 @@ public class PathSettings
 {
     public string RemoteRootPath { get; set; } = string.Empty;
 
-    public IEnumerable<string> StaticFilePaths { get; set; } = [];
-    public IEnumerable<string> RelativeIgnorePaths { get; set; } = [];
-    public IEnumerable<string> RelativeIgnoreFilePaths { get; set; } = [];
-    public IEnumerable<string> IgnoreFoldersNamed { get; set; } = [];
-    public IEnumerable<string> IgnoreFilesNamed { get; set; } = [];
+    public List<string> StaticFilePaths { get; set; } = [];
+    public List<string> RelativeIgnorePaths { get; set; } = [];
+    public List<string> RelativeIgnoreFilePaths { get; set; } = [];
+    public List<string> IgnoreFoldersNamed { get; set; } = [];
+    public List<string> IgnoreFilesNamed { get; set; } = [];
     
-    public IEnumerable<FileCopySettings> StaticFileCopies { get; set; } = [];
-    public IEnumerable<FileCopySettings> FileCopies { get; set; } = [];
+    public List<FileCopySettings> StaticFileCopies { get; set; } = [];
+    public List<FileCopySettings> FileCopies { get; set; } = [];
 }

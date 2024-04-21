@@ -12,90 +12,50 @@ public sealed class FdeployAppState
 
     #endregion
 
-    #region App State Properties
+    #region Constants
 
-    public List<string> CliArguments { get; } = new();
+    public static int MaxConsoleWidth => GetMaxConsoleWidth();
+	
+    private static int GetMaxConsoleWidth()
+    {
+        try
+        {
+            return Console.WindowWidth - 1;
+        }
+        catch
+        {
+            return 78;
+        }
+    }
+
     public static string CliErrorPrefix => "Fdeploy => ";
 
+    #endregion
+
+    #region App State Properties
+
+    public List<string> Exceptions { get; } = [];
+    public List<string> CliArguments { get; } = [];
     public FdeploySettings Settings { get; set; } = new();
-    public ConcurrentDictionary<string, string> DiagnosticOutput { get; } = new();
-    public string WorkingPathOverride { get; set; } = string.Empty;
-    public string SettingsFilePath { get; set; } = string.Empty;
-    public string WorkingPath { get; set; } = GetWorkingPath();
-    public string YamlPath { get; set; } = string.Empty;
+    public string YamlProjectFilePath { get; set; } = string.Empty;
+    public string WorkingPath { get; set; } = string.Empty;
 
     #endregion
 
-    public FdeployAppState()
+    public FdeployAppState(IEnumerable<string>? args, CancellationTokenSource cancellationToken)
     {
-    }
-
-    #region Entry Points
-
-    /// <summary>
-    /// Initialize the app state. Loads settings JSON file from working path.
-    /// Sets up runtime environment for the runner.
-    /// </summary>
-    /// <param name="args">CLI arguments</param>
-    public async Task InitializeAsync(IEnumerable<string> args)
-    {
-        var timer = new Stopwatch();
-
-        DiagnosticOutput.Clear();
-
-        await ProcessCliArgumentsAsync(args);
-
-        timer.Start();
-
-        if (VersionMode == false && HelpMode == false && InitMode == false)
-        {
-        }
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        var yaml = await File.ReadAllTextAsync(SettingsFilePath);
-        var deserializer = new DeserializerBuilder().IgnoreUnmatchedProperties().Build();
-        
-        Settings = deserializer.Deserialize<FdeploySettings>(yaml);
-    }
-
-    #endregion
-
-    #region Initialization Methods
-
-    /// <summary>
-    /// Process CLI arguments and set properties accordingly.
-    /// </summary>
-    /// <param name="args"></param>
-    private async Task ProcessCliArgumentsAsync(IEnumerable<string>? args)
-    {
-        CliArguments.Clear();
-        CliArguments.AddRange(args?.ToList() ?? new List<string>());
-
-        if (CliArguments.Count < 1)
+        if (cancellationToken.IsCancellationRequested)
             return;
+        
+        #region Process Arguments
+        
+        CliArguments.AddRange(args ?? []);
 
         if (CliArguments.Count == 0)
+            YamlProjectFilePath = Path.Combine(Directory.GetCurrentDirectory(), "fdeploy.yml");
+        
+        if (CliArguments.Count == 1)
         {
-            HelpMode = true;
-        }
-
-        else
-        {
-            if (CliArguments[0] != "help" && CliArguments[0] != "version" && CliArguments[0] != "init")
-            {
-                await Console.Out.WriteLineAsync(
-                    "Invalid command specified; must be: help, init, version, build, or watch");
-                await Console.Out.WriteLineAsync("Use command `fdeploy help` for assistance");
-                Environment.Exit(1);
-            }
-
             if (CliArguments[0] == "help")
             {
                 HelpMode = true;
@@ -111,48 +71,153 @@ public sealed class FdeployAppState
             if (CliArguments[0] == "init")
             {
                 InitMode = true;
+                return;
             }
 
-            if (CliArguments.Count > 1)
+            var projectFilePath = CliArguments[0].SetNativePathSeparators();
+
+            if (projectFilePath.EndsWith(".yml", StringComparison.OrdinalIgnoreCase) && projectFilePath.Contains(Path.DirectorySeparatorChar))
             {
-                for (var x = 1; x < CliArguments.Count; x++)
-                {
-                    var arg = CliArguments[x];
-
-                    if (arg.Equals("--path", StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (++x < CliArguments.Count)
-                        {
-                            var path = CliArguments[x].SetNativePathSeparators();
-
-                            if (path.Contains(Path.DirectorySeparatorChar) == false &&
-                                path.EndsWith(".yml", StringComparison.OrdinalIgnoreCase))
-                                continue;
-
-                            if (path.EndsWith(".yml", StringComparison.OrdinalIgnoreCase))
-                                path = path[..path.LastIndexOf(Path.DirectorySeparatorChar)];
-
-                            try
-                            {
-                                WorkingPathOverride = Path.GetFullPath(path);
-                            }
-
-                            catch
-                            {
-                                await Console.Out.WriteLineAsync($"{CliErrorPrefix}Invalid project path at {path}");
-                                Environment.Exit(1);
-                            }
-                        }
-                    }
-                }
+                YamlProjectFilePath = projectFilePath;
+            }
+            else
+            {
+                if (projectFilePath.EndsWith(".yml", StringComparison.OrdinalIgnoreCase))
+                    YamlProjectFilePath = Path.Combine(Directory.GetCurrentDirectory(), projectFilePath);
+                else
+                    YamlProjectFilePath = Path.Combine(Directory.GetCurrentDirectory(), $"fdeploy-{projectFilePath}.yml");
             }
         }
-    }
+        
+        #if DEBUG
 
-    public static string GetWorkingPath()
+        YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Fynydd-Website-2024/UmbracoCms", "fdeploy-staging.yml");
+        
+        #endif
+
+        #endregion
+        
+        #region Load Settings
+        
+        if (File.Exists(YamlProjectFilePath) == false)
+        {
+            Exceptions.Add($"Could not find project file `{YamlProjectFilePath}`");
+            cancellationToken.Cancel();
+            return;
+        }
+
+        if (YamlProjectFilePath.IndexOf(Path.DirectorySeparatorChar) < 0)
+        {
+            Exceptions.Add($"Invalid project file path `{YamlProjectFilePath}`");
+            cancellationToken.Cancel();
+            return;
+        }
+            
+        WorkingPath = YamlProjectFilePath[..YamlProjectFilePath.LastIndexOf(Path.DirectorySeparatorChar)];
+        
+        var yaml = File.ReadAllText(YamlProjectFilePath);
+        var deserializer = new DeserializerBuilder().IgnoreUnmatchedProperties().Build();
+        
+        Settings = deserializer.Deserialize<FdeploySettings>(yaml);
+        
+        #endregion
+
+        #region Normalize Paths
+
+        Settings.Project.ProjectFilePath = NormalizePath(Settings.Project.ProjectFilePath);
+        Settings.Paths.RemoteRootPath = NormalizePath(Settings.Paths.RemoteRootPath);
+
+        NormalizePaths(Settings.Paths.StaticFilePaths);
+        NormalizePaths(Settings.Paths.RelativeIgnorePaths);
+        NormalizePaths(Settings.Paths.RelativeIgnoreFilePaths);
+
+        foreach (var copy in Settings.Paths.StaticFileCopies)
+        {
+            copy.Source = NormalizePath(copy.Source);
+            copy.Destination = NormalizePath(copy.Destination);
+        }
+        
+        foreach (var copy in Settings.Paths.FileCopies)
+        {
+            copy.Source = NormalizePath(copy.Source);
+            copy.Destination = NormalizePath(copy.Destination);
+        }
+        
+        #endregion
+    }
+    
+    public async ValueTask<string> GetEmbeddedYamlPathAsync(CancellationTokenSource cancellationToken)
     {
-        return Directory.GetCurrentDirectory();
+        var workingPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+
+        while (workingPath.LastIndexOf(Path.DirectorySeparatorChar) > -1)
+        {
+            workingPath = workingPath[..workingPath.LastIndexOf(Path.DirectorySeparatorChar)];
+            
+#if DEBUG
+            if (Directory.Exists(Path.Combine(workingPath, "yaml")) == false)
+                continue;
+
+            var tempPath = workingPath; 
+			
+            workingPath = Path.Combine(tempPath, "yaml");
+#else
+			if (Directory.Exists(Path.Combine(workingPath, "contentFiles")) == false)
+				continue;
+		
+			var tempPath = workingPath; 
+
+			workingPath = Path.Combine(tempPath, "contentFiles", "any", "any", "yaml");
+#endif
+            break;
+        }
+
+        // ReSharper disable once InvertIf
+        if (string.IsNullOrEmpty(workingPath) || Directory.Exists(workingPath) == false)
+        {
+            Exceptions.Add("Embedded YAML resources cannot be found.");
+            await cancellationToken.CancelAsync();
+            return string.Empty;
+        }
+        
+        return workingPath;
     }
 
-    #endregion
+    public async ValueTask OutputExceptionsAsync()
+    {
+        await Console.Out.WriteLineAsync();
+
+        foreach (var message in Exceptions)
+            await Console.Out.WriteLineAsync($"{CliErrorPrefix}{message}");
+        
+        await Console.Out.WriteLineAsync();
+    }
+
+    public static async ValueTask ColonOut(string topic, string message)
+    {
+        const int maxTopicLength = 20;
+
+        if (topic.Length >= maxTopicLength)
+            await Console.Out.WriteAsync($"{topic[..maxTopicLength]}");
+        else
+            await Console.Out.WriteAsync($"{topic}{" ".Repeat(maxTopicLength - topic.Length)}");
+        
+        await Console.Out.WriteLineAsync($" : {message}");
+    }
+
+    public static string NormalizePath(string path)
+    {
+        return path.SetNativePathSeparators().Trim(Path.DirectorySeparatorChar);
+    }
+
+    public static void NormalizePaths(List<string> source)
+    {
+        var list = new List<string>();
+        
+        foreach (var path in source)
+            list.Add(NormalizePath(path));
+
+        source.Clear();
+        source.AddRange(list);
+    }
 }

@@ -1,7 +1,7 @@
 # Fdeploy Reference Configuration
 # ===============================
-# Configuration files must be named `fdeploy-{name}.yml` so fdeploy can call a configuration by its name
-# (e.g. fdeploy production). Create files for each deployment target.
+# Configuration files must be named `fdeploy.yml` or  `fdeploy-{name}.yml` so fdeploy can call a configuration by its name
+# (e.g. fdeploy production). You should create files for each deployment target.
 
 # Delete destination files and folders that are not in the source; default is true
 DeleteOrphans: true
