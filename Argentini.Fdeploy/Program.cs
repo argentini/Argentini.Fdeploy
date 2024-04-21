@@ -8,21 +8,32 @@ internal class Program
 
         var runner = new AppRunner(args);
 
-        if (runner.AppState.CancellationTokenSource.IsCancellationRequested)
+        if (runner.CancellationTokenSource.IsCancellationRequested)
         {
             await runner.OutputExceptionsAsync();
         }
 
         await runner.DeployAsync();
-        
-        if (runner.AppState.CancellationTokenSource.IsCancellationRequested)
+
+        if (runner.CancellationTokenSource.IsCancellationRequested)
         {
             await runner.OutputExceptionsAsync();
+            await Console.Out.WriteLineAsync();
+        }
+
+        else
+        {
+            await Console.Out.WriteLineAsync();
+            await AppRunner.ColonOutAsync("Completed Deployment", $"{DateTime.Now:HH:mm:ss.fff}");
         }
         
-        await AppRunner.ColonOutAsync("Completed Deployment", $"{DateTime.Now:HH:mm:ss.fff}");
         await AppRunner.ColonOutAsync("Total Run Time", $"{TimeSpan.FromMilliseconds(runner.Timer.ElapsedMilliseconds):c}");
 
         await Console.Out.WriteLineAsync();
-	}
+
+        if (runner.CancellationTokenSource.IsCancellationRequested)
+            Environment.Exit(1);
+        else
+            Environment.Exit(0);
+    }
 }

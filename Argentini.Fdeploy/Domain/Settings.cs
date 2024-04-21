@@ -1,6 +1,6 @@
 namespace Argentini.Fdeploy.Domain;
 
-public sealed class FdeploySettings
+public sealed class Settings
 {
     public bool DeleteOrphans { get; set; } = true;
     public bool OverwriteWebConfig { get; set; } = true;

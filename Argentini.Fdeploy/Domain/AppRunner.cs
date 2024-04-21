@@ -1,3 +1,5 @@
+using YamlDotNet.Serialization;
+
 namespace Argentini.Fdeploy.Domain;
 
 public class AppRunner
@@ -18,22 +20,137 @@ public class AppRunner
         }
     }
 
-    public static string CliErrorPrefix => "Fdeploy => ";
+    public static string CliErrorPrefix => "ERROR => ";
 
     #endregion
 
+    #region Run Mode Properties
+
+    public bool VersionMode { get; set; }
+    public bool InitMode { get; set; }
+    public bool HelpMode { get; set; }
+
+    #endregion
+    
+    #region App State Properties
+
+    public CancellationTokenSource CancellationTokenSource { get; set; } = new();
+    public List<string> Exceptions { get; } = [];
+    public List<string> CliArguments { get; } = [];
+    public Settings Settings { get; set; } = new();
+    public string YamlProjectFilePath { get; set; } = string.Empty;
+    public string WorkingPath { get; set; } = string.Empty;
+
+    #endregion
+    
     #region Properties
     
-    public FdeployAppState AppState { get; set; }
-    public StorageService StorageService { get; set; }
-    public Stopwatch Timer { get; set; } = new();
+    public StorageRunner StorageRunner { get; } = null!;
+    public Stopwatch Timer { get; } = new();
 
     #endregion
     
     public AppRunner(IEnumerable<string> args)
     {
-        AppState = new FdeployAppState(args);
-        StorageService = new StorageService(AppState);
+        #region Process Arguments
+        
+        CliArguments.AddRange(args);
+
+        if (CliArguments.Count == 0)
+            YamlProjectFilePath = Path.Combine(Directory.GetCurrentDirectory(), "fdeploy.yml");
+        
+        if (CliArguments.Count == 1)
+        {
+            if (CliArguments[0] == "help")
+            {
+                HelpMode = true;
+                return;
+            }
+
+            if (CliArguments[0] == "version")
+            {
+                VersionMode = true;
+                return;
+            }
+
+            if (CliArguments[0] == "init")
+            {
+                InitMode = true;
+                return;
+            }
+
+            var projectFilePath = CliArguments[0].SetNativePathSeparators();
+
+            if (projectFilePath.EndsWith(".yml", StringComparison.OrdinalIgnoreCase) && projectFilePath.Contains(Path.DirectorySeparatorChar))
+            {
+                YamlProjectFilePath = projectFilePath;
+            }
+            else
+            {
+                if (projectFilePath.EndsWith(".yml", StringComparison.OrdinalIgnoreCase))
+                    YamlProjectFilePath = Path.Combine(Directory.GetCurrentDirectory(), projectFilePath);
+                else
+                    YamlProjectFilePath = Path.Combine(Directory.GetCurrentDirectory(), $"fdeploy-{projectFilePath}.yml");
+            }
+        }
+        
+        #if DEBUG
+
+        YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Fynydd-Website-2024/UmbracoCms", "fdeploy-staging.yml");
+        
+        #endif
+
+        #endregion
+        
+        #region Load Settings
+        
+        if (File.Exists(YamlProjectFilePath) == false)
+        {
+            Exceptions.Add($"Could not find project file `{YamlProjectFilePath}`");
+            CancellationTokenSource.Cancel();
+            return;
+        }
+
+        if (YamlProjectFilePath.IndexOf(Path.DirectorySeparatorChar) < 0)
+        {
+            Exceptions.Add($"Invalid project file path `{YamlProjectFilePath}`");
+            CancellationTokenSource.Cancel();
+            return;
+        }
+            
+        WorkingPath = YamlProjectFilePath[..YamlProjectFilePath.LastIndexOf(Path.DirectorySeparatorChar)];
+        
+        var yaml = File.ReadAllText(YamlProjectFilePath);
+        var deserializer = new DeserializerBuilder().IgnoreUnmatchedProperties().Build();
+        
+        Settings = deserializer.Deserialize<Settings>(yaml);
+        
+        #endregion
+
+        #region Normalize Paths
+
+        Settings.Project.ProjectFilePath = NormalizePath(Settings.Project.ProjectFilePath);
+        Settings.Paths.RemoteRootPath = NormalizePath(Settings.Paths.RemoteRootPath);
+
+        NormalizePaths(Settings.Paths.StaticFilePaths);
+        NormalizePaths(Settings.Paths.RelativeIgnorePaths);
+        NormalizePaths(Settings.Paths.RelativeIgnoreFilePaths);
+
+        foreach (var copy in Settings.Paths.StaticFileCopies)
+        {
+            copy.Source = NormalizePath(copy.Source);
+            copy.Destination = NormalizePath(copy.Destination);
+        }
+        
+        foreach (var copy in Settings.Paths.FileCopies)
+        {
+            copy.Source = NormalizePath(copy.Source);
+            copy.Destination = NormalizePath(copy.Destination);
+        }
+        
+        #endregion
+        
+        StorageRunner = new StorageRunner(Settings, Exceptions, CancellationTokenSource);
     }
 
     public async ValueTask DeployAsync()
@@ -42,7 +159,7 @@ public class AppRunner
 		
 		var version = await Identify.VersionAsync(System.Reflection.Assembly.GetExecutingAssembly());
         
-		if (AppState.VersionMode)
+		if (VersionMode)
 		{
 			await Console.Out.WriteLineAsync($"Fdeploy Version {version}");
 			return;
@@ -53,14 +170,14 @@ public class AppRunner
 		await Console.Out.WriteLineAsync($"Version {version} for {Identify.GetOsPlatformName()} (.NET {Identify.GetRuntimeVersion()}/{Identify.GetProcessorArchitecture()})");
 		await Console.Out.WriteLineAsync(Strings.ThickLine.Repeat(MaxConsoleWidth));
 		
-		if (AppState.InitMode)
+		if (InitMode)
 		{
-			var yaml = await File.ReadAllTextAsync(Path.Combine(await GetEmbeddedYamlPathAsync(AppState.CancellationTokenSource), "fdeploy.yml"), AppState.CancellationTokenSource.Token);
+			var yaml = await File.ReadAllTextAsync(Path.Combine(await GetEmbeddedYamlPathAsync(CancellationTokenSource), "fdeploy.yml"), CancellationTokenSource.Token);
 
-            if (AppState.CancellationTokenSource.IsCancellationRequested == false)
-    			await File.WriteAllTextAsync(Path.Combine(Directory.GetCurrentDirectory(), "fdeploy.yml"), yaml, AppState.CancellationTokenSource.Token);
+            if (CancellationTokenSource.IsCancellationRequested == false)
+    			await File.WriteAllTextAsync(Path.Combine(Directory.GetCurrentDirectory(), "fdeploy.yml"), yaml, CancellationTokenSource.Token);
 			
-            if (AppState.CancellationTokenSource.IsCancellationRequested == false)
+            if (CancellationTokenSource.IsCancellationRequested == false)
             {
 			    await Console.Out.WriteLineAsync($"Created fdeploy.yml file at {Directory.GetCurrentDirectory()}");
 			    await Console.Out.WriteLineAsync();
@@ -68,7 +185,7 @@ public class AppRunner
             }
 		}
 		
-		else if (AppState.HelpMode)
+		else if (HelpMode)
 		{
 			await Console.Out.WriteLineAsync();
 			await Console.Out.WriteLineAsync("Fdeploy will look in the current working directory for a file named `fdeploy.yml`.");
@@ -93,18 +210,26 @@ public class AppRunner
 			return;
 		}
 
-		await ColonOutAsync("Settings File", AppState.YamlProjectFilePath);
+		await ColonOutAsync("Settings File", YamlProjectFilePath);
 
-        if (AppState.CancellationTokenSource.IsCancellationRequested)
+        if (CancellationTokenSource.IsCancellationRequested)
             return;
         
         await ColonOutAsync("Started Deployment", $"{DateTime.Now:HH:mm:ss.fff}");
         await Console.Out.WriteLineAsync();
 
-        await StorageService.ConnectAsync();        
+        await Console.Out.WriteAsync($"Connecting to {Settings.ServerConnection.ServerAddress}...");
+        
+        await StorageRunner.ConnectAsync();
 
-        if (AppState.CancellationTokenSource.IsCancellationRequested)
+        if (CancellationTokenSource.IsCancellationRequested)
+        {
+            await Console.Out.WriteLineAsync(" Failed!");
+            StorageRunner.Disconnect();
             return;
+        }
+
+        await Console.Out.WriteLineAsync(" Success!");
         
         
         
@@ -114,7 +239,7 @@ public class AppRunner
         
         
         
-        StorageService.Disconnect();
+        StorageRunner.Disconnect();
     }
     
     public async ValueTask<string> GetEmbeddedYamlPathAsync(CancellationTokenSource cancellationToken)
@@ -146,7 +271,7 @@ public class AppRunner
         // ReSharper disable once InvertIf
         if (string.IsNullOrEmpty(workingPath) || Directory.Exists(workingPath) == false)
         {
-            AppState.Exceptions.Add("Embedded YAML resources cannot be found.");
+            Exceptions.Add("Embedded YAML resources cannot be found.");
             await cancellationToken.CancelAsync();
             return string.Empty;
         }
@@ -156,12 +281,8 @@ public class AppRunner
 
     public async ValueTask OutputExceptionsAsync()
     {
-        await Console.Out.WriteLineAsync();
-
-        foreach (var message in AppState.Exceptions)
+        foreach (var message in Exceptions)
             await Console.Out.WriteLineAsync($"{CliErrorPrefix}{message}");
-        
-        await Console.Out.WriteLineAsync();
     }
 
     public static async ValueTask ColonOutAsync(string topic, string message)
@@ -174,5 +295,21 @@ public class AppRunner
             await Console.Out.WriteAsync($"{topic}{" ".Repeat(maxTopicLength - topic.Length)}");
         
         await Console.Out.WriteLineAsync($" : {message}");
+    }
+    
+    public static string NormalizePath(string path)
+    {
+        return path.SetNativePathSeparators().Trim(Path.DirectorySeparatorChar);
+    }
+
+    public static void NormalizePaths(List<string> source)
+    {
+        var list = new List<string>();
+        
+        foreach (var path in source)
+            list.Add(NormalizePath(path));
+
+        source.Clear();
+        source.AddRange(list);
     }
 }
