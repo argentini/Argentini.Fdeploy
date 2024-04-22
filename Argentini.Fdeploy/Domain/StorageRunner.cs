@@ -37,7 +37,7 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
             {
                 var result = client.BeginConnect(Settings.ServerConnection.ServerAddress, 445, null, null);
                 
-                serverAvailable = result.AsyncWaitHandle.WaitOne(TimeSpan.FromSeconds(5));
+                serverAvailable = result.AsyncWaitHandle.WaitOne(TimeSpan.FromMilliseconds(Settings.ServerConnection.ConnectTimeoutMs));
             }
             catch
             {

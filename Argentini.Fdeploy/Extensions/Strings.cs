@@ -7,8 +7,8 @@ public static class Strings
 {
 	#region Constants
 
-    public static string ArrowRight => "\u2b95 ";
-	public static string TriangleRight => "\u23f5 ";
+    public static string ArrowRight => "\u2b95";
+	public static string TriangleRight => "\u23f5";
 	public static string ThinLine => "\u23bb";
 	public static string ThickLine => "\u2501";
 	
