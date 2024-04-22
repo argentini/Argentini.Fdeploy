@@ -23,11 +23,15 @@ internal class Program
 
         else
         {
-            await Console.Out.WriteLineAsync();
-            await AppRunner.ColonOutAsync("Completed Deployment", $"{DateTime.Now:HH:mm:ss.fff}");
+            if (runner is { VersionMode: false, HelpMode: false, InitMode: false })
+            {
+                await Console.Out.WriteLineAsync();
+                await AppRunner.ColonOutAsync("Completed Deployment", $"{DateTime.Now:HH:mm:ss.fff}");
+            }
         }
         
-        await AppRunner.ColonOutAsync("Total Run Time", $"{TimeSpan.FromMilliseconds(runner.Timer.ElapsedMilliseconds):c}");
+        if (runner is { VersionMode: false, HelpMode: false, InitMode: false })
+            await AppRunner.ColonOutAsync("Total Run Time", $"{TimeSpan.FromMilliseconds(runner.Timer.ElapsedMilliseconds):c}");
 
         await Console.Out.WriteLineAsync();
 
