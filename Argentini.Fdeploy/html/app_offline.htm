@@ -15,16 +15,46 @@
             color: black;
             font-family: ui-sans-serif, sans-serif;
             font-size: 16px;
-            line-height: 1.35;
+            line-height: 1.4;
+        }
+        
+        h1 {
+            font-weight: 900;
+            margin-top: 0;
+            line-height: 1.15;
+        }
+        
+        main {
+            position: relative;
+            width: 100svw;
+            height: 100svh;
+        }
+        
+        main > div {
+            position: absolute;
+            width: 100%;
+            max-width: 40rem;
+            max-height: 100svh;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%,-50%);
+            text-align: center;
+            overflow-y: auto;
+        }
+        
+        main > div > div {
+            padding: 25px;
         }
         
     </style>
 </head>
 <body>
-    <main style="position: relative; width: 100svw; height: 100svh;">
-        <div style="position: absolute; max-width: 40rem; left: 50%; top: 50%; transform: translate(-50%,-50%); text-align: center;">
-            <h1>{{PageTitle}}</h1>
-            {{PageHtml}}
+    <main>
+        <div>
+            <div>
+                <h1>{{PageTitle}}</h1>
+                {{PageHtml}}
+            </div>
         </div>
     </main>
 </body>
