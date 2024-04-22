@@ -140,6 +140,23 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
         
         #endregion
         
+        #region Connect to Server
+        
+        await Console.Out.WriteAsync($"Connecting to {Settings.ServerConnection.ServerAddress}...");
+        
+        await ConnectAsync();
+
+        if (CancellationTokenSource.IsCancellationRequested)
+        {
+            await Console.Out.WriteLineAsync(" Failed!");
+            Disconnect();
+            return;
+        }
+
+        await Console.Out.WriteLineAsync(" Success!");
+        
+        #endregion
+        
         #region Index Server Files
         
         await Console.Out.WriteAsync("Scanning server files...");
@@ -147,14 +164,14 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
         await RecurseSmbPathAsync(Settings.Paths.RemoteRootPath.SetSmbPathSeparators());
 
         if (CancellationTokenSource.IsCancellationRequested)
-            await Console.Out.WriteLineAsync(" Failed!");
+            await Console.Out.WriteLineAsync(" Processing Failed!");
         else        
             await Console.Out.WriteLineAsync($" {ServerFiles.Count:N0} files... Success!");
 
         #endregion
     }
 
-    private async ValueTask RecurseSmbPathAsync(string path)
+    private async ValueTask RecurseSmbPathAsync(string path, int level = 0)
     {
         var fileStore = Client.TreeConnect(Settings.ServerConnection.ShareName, out var status);
 
@@ -192,15 +209,18 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
 
                             if (isDirectory)
                             {
-                                if (Settings.Paths.RelativeIgnorePaths.Contains(filePath.NormalizePath().TrimStart(Settings.Paths.RemoteRootPath) ?? string.Empty) || Settings.Paths.IgnoreFoldersNamed.Contains(file.FileName))
+                                if (Settings.Paths.RelativeIgnorePaths.Contains(filePath.NormalizePath().TrimStart(Settings.Paths.RemoteRootPath).TrimPath()) || Settings.Paths.IgnoreFoldersNamed.Contains(file.FileName))
                                     continue;
                                 
-                                await RecurseSmbPathAsync($"{path}\\{file.FileName}");
+                                if (level == 0)
+                                    await Console.Out.WriteAsync($" {file.FileName}/...");
+                                
+                                await RecurseSmbPathAsync($"{path}\\{file.FileName}", level + 1);
                             }
 
                             else
                             {
-                                if (Settings.Paths.RelativeIgnoreFilePaths.Contains(filePath.NormalizePath().TrimStart(Settings.Paths.RemoteRootPath) ?? string.Empty) || Settings.Paths.IgnoreFilesNamed.Contains(file.FileName))
+                                if (Settings.Paths.RelativeIgnoreFilePaths.Contains(filePath.NormalizePath().TrimStart(Settings.Paths.RemoteRootPath).TrimPath()) || Settings.Paths.IgnoreFilesNamed.Contains(file.FileName))
                                     continue;
 
                                 ServerFiles.Add(new FileObject

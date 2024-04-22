@@ -20,7 +20,7 @@ public sealed class AppRunner
         }
     }
 
-    public static string CliErrorPrefix => "ERROR => ";
+    public static string CliErrorPrefix => $"ERROR {Strings.ArrowRight} ";
 
     #endregion
 
@@ -223,19 +223,6 @@ public sealed class AppRunner
         
         await ColonOutAsync("Started Deployment", $"{DateTime.Now:HH:mm:ss.fff}");
         await Console.Out.WriteLineAsync();
-
-        await Console.Out.WriteAsync($"Connecting to {Settings.ServerConnection.ServerAddress}...");
-        
-        await StorageRunner.ConnectAsync();
-
-        if (CancellationTokenSource.IsCancellationRequested)
-        {
-            await Console.Out.WriteLineAsync(" Failed!");
-            StorageRunner.Disconnect();
-            return;
-        }
-
-        await Console.Out.WriteLineAsync(" Success!");
         
         await StorageRunner.RunDeploymentAsync();
         
