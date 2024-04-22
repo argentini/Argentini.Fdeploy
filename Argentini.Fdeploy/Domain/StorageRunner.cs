@@ -1,3 +1,5 @@
+using System.Net.Sockets;
+using Argentini.Fdeploy.ConsoleBusy;
 using SMBLibrary;
 using SMBLibrary.Client;
 using FileAttributes = SMBLibrary.FileAttributes;
@@ -27,7 +29,34 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
     
     public async ValueTask ConnectAsync()
     {
-        var isConnected = Client.Connect(Settings.ServerConnection.ServerAddress, SMBTransportType.DirectTCPTransport);
+        var serverAvailable = false;
+        
+        using (var client = new TcpClient())
+        {
+            try
+            {
+                var result = client.BeginConnect(Settings.ServerConnection.ServerAddress, 445, null, null);
+                
+                serverAvailable = result.AsyncWaitHandle.WaitOne(TimeSpan.FromSeconds(5));
+            }
+            catch
+            {
+                serverAvailable = false;
+            }
+            finally
+            {
+                client.Close();
+            }
+        }
+
+        if (serverAvailable == false)
+        {
+            Exceptions.Add("Server is not responding");
+            await CancellationTokenSource.CancelAsync();
+            return;
+        }
+        
+        var isConnected = Client.Connect(Settings.ServerConnection.ServerAddress, SMBTransportType.DirectTCPTransport, Settings.ServerConnection.ResponseTimeoutMs);
         var shares = new List<string>();
 
         if (isConnected)
@@ -89,89 +118,109 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
 
     public async ValueTask RunDeploymentAsync()
     {
+        #region Connect to Server
+
+        await Spinner.StartAsync($"Connecting to {Settings.ServerConnection.ServerAddress}...", async spinner =>
+        {
+            await ConnectAsync();
+
+            if (CancellationTokenSource.IsCancellationRequested)
+            {
+                spinner.Fail($"Connecting to {Settings.ServerConnection.ServerAddress}... Failed!");
+                Disconnect();
+                return;
+            }
+
+            spinner.Text = $"Connecting to {Settings.ServerConnection.ServerAddress}... Success!";
+
+        }, Patterns.Dots, Patterns.Line);
+
+        if (CancellationTokenSource.IsCancellationRequested)
+            return;
+        
+        #endregion
+
         #region Publish Project
 
         PublishPath = $"{WorkingPath}{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}publish";
         TrimmablePublishPath = PublishPath.TrimPath();
 
-        try
+        var sb = new StringBuilder();
+
+        await Spinner.StartAsync($"Publishing project {Settings.Project.ProjectFileName}...", async spinner =>
         {
-            await Console.Out.WriteAsync($"Publishing project {Settings.Project.ProjectFileName}...");
-
-            var sb = new StringBuilder();
-            var cmd = Cli.Wrap("dotnet")
-                .WithArguments(new [] { "publish", "--framework", $"net{Settings.Project.TargetFramework:N1}", $"{WorkingPath}{Path.DirectorySeparatorChar}{Settings.Project.ProjectFilePath}", "-c", Settings.Project.BuildConfiguration, "-o", PublishPath, $"/p:EnvironmentName={Settings.Project.EnvironmentName}" })
-                .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
-                .WithStandardErrorPipe(PipeTarget.Null);
-		    
-            var result = await cmd.ExecuteAsync();
-
-            if (result.IsSuccess == false)
+            try
             {
-                await Console.Out.WriteLineAsync(" Failed!");
-                Exceptions.Add($"Could not publish the project; exit code: {result.ExitCode}");
-                await CancellationTokenSource.CancelAsync();
-                return;
+                var cmd = Cli.Wrap("dotnet")
+                    .WithArguments(new [] { "publish", "--framework", $"net{Settings.Project.TargetFramework:N1}", $"{WorkingPath}{Path.DirectorySeparatorChar}{Settings.Project.ProjectFilePath}", "-c", Settings.Project.BuildConfiguration, "-o", PublishPath, $"/p:EnvironmentName={Settings.Project.EnvironmentName}" })
+                    .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
+                    .WithStandardErrorPipe(PipeTarget.Null);
+		    
+                var result = await cmd.ExecuteAsync();
+
+                if (result.IsSuccess == false)
+                {
+                    spinner.Fail($"Publishing project {Settings.Project.ProjectFileName}... Failed!");
+                    Exceptions.Add($"Could not publish the project; exit code: {result.ExitCode}");
+                    await CancellationTokenSource.CancelAsync();
+                    return;
+                }
+
+                spinner.Text = $"Published project {Settings.Project.ProjectFileName}... Success!";
             }
 
-            await Console.Out.WriteLineAsync(" Success!");
-        }
+            catch (Exception e)
+            {
+                spinner.Fail($"Publishing project {Settings.Project.ProjectFileName}... Failed!");
+                Exceptions.Add($"Could not publish the project; {e.Message}");
+                await CancellationTokenSource.CancelAsync();
+            }
+            
+        }, Patterns.Dots, Patterns.Line);
 
-        catch (Exception e)
-        {
-            await Console.Out.WriteLineAsync(" Failed!");
-            Exceptions.Add($"Could not publish the project; {e.Message}");
-            await CancellationTokenSource.CancelAsync();
+        if (CancellationTokenSource.IsCancellationRequested)
             return;
-        }
         
         #endregion
         
         #region Index Local Files
 
-        await Console.Out.WriteAsync("Scanning local files...");
-        
-        await RecurseLocalPathAsync(PublishPath);
-
-        if (CancellationTokenSource.IsCancellationRequested)
-            await Console.Out.WriteLineAsync(" Failed!");
-        else        
-            await Console.Out.WriteLineAsync($" {LocalFiles.Count:N0} files... Success!");
-        
-        #endregion
-        
-        #region Connect to Server
-        
-        await Console.Out.WriteAsync($"Connecting to {Settings.ServerConnection.ServerAddress}...");
-        
-        await ConnectAsync();
-
-        if (CancellationTokenSource.IsCancellationRequested)
+        await Spinner.StartAsync("Indexing local files...", async spinner =>
         {
-            await Console.Out.WriteLineAsync(" Failed!");
-            Disconnect();
-            return;
-        }
+            await RecurseLocalPathAsync(PublishPath);
 
-        await Console.Out.WriteLineAsync(" Success!");
+            if (CancellationTokenSource.IsCancellationRequested)
+                spinner.Fail("Indexing local files... Failed!");
+            else        
+                spinner.Text = $"Indexing local files... {LocalFiles.Count:N0} files... Success!";
+            
+        }, Patterns.Dots, Patterns.Line);
+       
+        if (CancellationTokenSource.IsCancellationRequested)
+            return;
         
         #endregion
-        
+       
         #region Index Server Files
         
-        await Console.Out.WriteAsync("Scanning server files...");
+        await Spinner.StartAsync("Indexing server files...", async spinner =>
+        {
+            await RecurseSmbPathAsync(Settings.Paths.RemoteRootPath.SetSmbPathSeparators(), spinner);
 
-        await RecurseSmbPathAsync(Settings.Paths.RemoteRootPath.SetSmbPathSeparators());
+            if (CancellationTokenSource.IsCancellationRequested)
+                spinner.Fail("Indexing server files... Failed!");
+            else
+                spinner.Text = "Indexing server files... Success!";
+
+        }, Patterns.Dots, Patterns.Line);
 
         if (CancellationTokenSource.IsCancellationRequested)
-            await Console.Out.WriteLineAsync(" Processing Failed!");
-        else        
-            await Console.Out.WriteLineAsync($" {ServerFiles.Count:N0} files... Success!");
+            return;
 
         #endregion
     }
 
-    private async ValueTask RecurseSmbPathAsync(string path, int level = 0)
+    private async ValueTask RecurseSmbPathAsync(string path, Spinner spinner, int level = 0)
     {
         var fileStore = Client.TreeConnect(Settings.ServerConnection.ShareName, out var status);
 
@@ -213,9 +262,9 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
                                     continue;
                                 
                                 if (level == 0)
-                                    await Console.Out.WriteAsync($" {file.FileName}/...");
+                                    spinner.Text = $"Indexing server files... {file.FileName}/...";
                                 
-                                await RecurseSmbPathAsync($"{path}\\{file.FileName}", level + 1);
+                                await RecurseSmbPathAsync($"{path}\\{file.FileName}", spinner, level + 1);
                             }
 
                             else

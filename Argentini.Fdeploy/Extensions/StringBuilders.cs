@@ -258,7 +258,7 @@ public static class StringBuilders
 	{
 		if (source.IsEmpty()) return;
 
-		if (linebreak == null || linebreak.IsEmpty()) return;
+		if (linebreak is null || linebreak.IsEmpty()) return;
         
 		if (source.Contains("\r\n") && linebreak != "\r\n")
 			source.Replace("\r\n", linebreak);

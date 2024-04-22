@@ -7,10 +7,10 @@ public static class Strings
 {
 	#region Constants
 
-	public static string ArrowRight => "\u2b95";	
-	public static string TriangleRight => "\u23f5";	
-	public static string ThinLine => "\u23bb";	
-	public static string ThickLine => "\u2501";	
+    public static string ArrowRight => "\u2b95 ";
+	public static string TriangleRight => "\u23f5 ";
+	public static string ThinLine => "\u23bb";
+	public static string ThickLine => "\u2501";
 	
 	public static Dictionary<string, string> CssNamedColors { get; } = new()
 	{
@@ -206,7 +206,7 @@ public static class Strings
 	/// <returns>Trimmed source</returns>
 	public static string? TrimStart(this string? source, string? substring = " ", StringComparison stringComparison = StringComparison.Ordinal)
 	{
-		if (source == null || source.IsEmpty() || substring is null or "")
+		if (source is null || source.IsEmpty() || substring is null or "")
 			return null;
 
 		var result = new StringBuilder(source);
@@ -225,7 +225,7 @@ public static class Strings
 	/// <returns>Trimmed source</returns>
 	public static string? TrimEnd(this string? source, string? substring = " ", StringComparison stringComparison = StringComparison.Ordinal)
 	{
-		if (source == null || source.IsEmpty() || substring is null or "")
+		if (source is null || source.IsEmpty() || substring is null or "")
 			return null;
 
 		var result = new StringBuilder(source);
@@ -279,9 +279,9 @@ public static class Strings
 	/// <returns></returns>
 	public static bool NotEquals(this string? source, string? value, StringComparison comparisonType = StringComparison.Ordinal)
 	{
-		if (source == null && value == null) return false;
-		if (source is not null && value == null) return true;
-		if (source == null && value is not null) return true;
+		if (source is null && value is null) return false;
+		if (source is not null && value is null) return true;
+		if (source is null && value is not null) return true;
 		
 		return source?.Equals(value, comparisonType) == false;
 	}
@@ -295,9 +295,9 @@ public static class Strings
     /// <returns></returns>
     public static bool InvariantNotEquals(this string? source, string? value)
     {
-        if (source == null && value == null) return false;
-        if (source is not null && value == null) return true;
-        if (source == null && value is not null) return true;
+        if (source is null && value is null) return false;
+        if (source is not null && value is null) return true;
+        if (source is null && value is not null) return true;
 		
         return source?.Equals(value, StringComparison.InvariantCultureIgnoreCase) == false;
     }
@@ -375,7 +375,7 @@ public static class Strings
 	/// <returns>Left portion of a string</returns>
 	public static string Left(this string? value, int length)
 	{
-		if (value == null || value.IsEmpty() || length < 1) return string.Empty;
+		if (value is null || value.IsEmpty() || length < 1) return string.Empty;
 		if (length > value.Length) return value;
 		
 		return value[..length];
@@ -390,8 +390,8 @@ public static class Strings
 	/// <returns>Left portion of a string</returns>
 	public static string Left(this string? value, string? marker)
 	{
-		if (value == null || value.IsEmpty()) return string.Empty;
-		if (marker == null || marker.IsEmpty()) return value;
+		if (value is null || value.IsEmpty()) return string.Empty;
+		if (marker is null || marker.IsEmpty()) return value;
 
 		if (value.Length <= marker.Length) return string.Empty;
 
@@ -409,7 +409,7 @@ public static class Strings
 	/// <returns>Right portion of a string</returns>
 	public static string Right(this string? value, int length)
 	{
-		if (value == null || value.IsEmpty() || length < 1) return string.Empty;
+		if (value is null || value.IsEmpty() || length < 1) return string.Empty;
 		if (length > value.Length) return value;
 
 		return value[^length..];
@@ -424,8 +424,8 @@ public static class Strings
 	/// <returns>Right portion of a string</returns>
 	public static string Right(this string? value, string? marker)
 	{
-		if (value == null || value.IsEmpty()) return string.Empty;
-		if (marker == null || marker.IsEmpty()) return value;
+		if (value is null || value.IsEmpty()) return string.Empty;
+		if (marker is null || marker.IsEmpty()) return value;
 
 		if (value.Length <= marker.Length) return string.Empty;
 		

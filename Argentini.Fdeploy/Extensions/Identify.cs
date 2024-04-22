@@ -60,7 +60,7 @@ public static class Identify
             .GetCustomAttribute<TargetFrameworkAttribute>()?
             .FrameworkName;
 
-        if (result == null || result.IsEmpty()) return string.Empty;
+        if (result is null || result.IsEmpty()) return string.Empty;
 
         if (result.Contains("Version="))
             return result.Right("Version=").TrimStart(new[] { 'v' });

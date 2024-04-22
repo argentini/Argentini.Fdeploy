@@ -20,7 +20,7 @@ public sealed class AppRunner
         }
     }
 
-    public static string CliErrorPrefix => $"ERROR {Strings.ArrowRight} ";
+    public static string CliErrorPrefix => "  • ";
 
     #endregion
 

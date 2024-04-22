@@ -25,6 +25,7 @@ ServerConnection:
     Domain: domain
     UserName: username
     Password: password
+    ResponseTimeoutMs: 15000
 
 Offline:
     
