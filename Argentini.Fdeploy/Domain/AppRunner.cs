@@ -2,7 +2,7 @@ using YamlDotNet.Serialization;
 
 namespace Argentini.Fdeploy.Domain;
 
-public class AppRunner
+public sealed class AppRunner
 {
     #region Constants
 
@@ -150,7 +150,7 @@ public class AppRunner
         
         #endregion
         
-        StorageRunner = new StorageRunner(Settings, Exceptions, CancellationTokenSource);
+        StorageRunner = new StorageRunner(Settings, Exceptions, CancellationTokenSource, WorkingPath);
     }
 
     public async ValueTask DeployAsync()
@@ -231,13 +231,7 @@ public class AppRunner
 
         await Console.Out.WriteLineAsync(" Success!");
         
-        
-        
-        
-        
-        
-        
-        
+        await StorageRunner.RunDeploymentAsync();
         
         StorageRunner.Disconnect();
     }

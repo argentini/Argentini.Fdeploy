@@ -569,7 +569,22 @@ public static class Strings
 		
 		return path;        
 	}
-	
+
+    /// <summary>
+    /// Normalize path separators to those used by the SMB protocol.
+    /// </summary>
+    /// <param name="value"></param>
+    public static string SetSmbPathSeparators(this string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return string.Empty;
+
+        if (value.IndexOf('\\') > -1)
+            return value;
+
+        return value.Replace('/', '\\');        
+    }
+
 	/// <summary>
 	/// Convert bytes into a user-friendly size (e.g. 1024 becomes 1kb).
 	/// </summary>
