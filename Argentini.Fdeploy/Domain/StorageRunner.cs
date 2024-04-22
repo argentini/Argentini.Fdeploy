@@ -17,7 +17,9 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
     #endregion
 
     #region Properties
-    
+
+    public string PublishPath { get; set; } = string.Empty;
+    public string TrimmablePublishPath { get; set; } = string.Empty;
     public List<FileObject> LocalFiles { get; } = [];
     public List<FileObject> ServerFiles { get; } = [];
     
@@ -87,10 +89,67 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
 
     public async ValueTask RunDeploymentAsync()
     {
-        #region Read All Local Files
+        #region Publish Project
 
-        await RecurseLocalPathAsync(WorkingPath);
+        PublishPath = $"{WorkingPath}{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}publish";
+        TrimmablePublishPath = PublishPath.TrimPath();
+
+        try
+        {
+            await Console.Out.WriteAsync($"Publishing project {Settings.Project.ProjectFileName}...");
+
+            var sb = new StringBuilder();
+            var cmd = Cli.Wrap("dotnet")
+                .WithArguments(new [] { "publish", "--framework", $"net{Settings.Project.TargetFramework:N1}", $"{WorkingPath}{Path.DirectorySeparatorChar}{Settings.Project.ProjectFilePath}", "-c", Settings.Project.BuildConfiguration, "-o", PublishPath, $"/p:EnvironmentName={Settings.Project.EnvironmentName}" })
+                .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
+                .WithStandardErrorPipe(PipeTarget.Null);
+		    
+            var result = await cmd.ExecuteAsync();
+
+            if (result.IsSuccess == false)
+            {
+                await Console.Out.WriteLineAsync(" Failed!");
+                Exceptions.Add($"Could not publish the project; exit code: {result.ExitCode}");
+                await CancellationTokenSource.CancelAsync();
+                return;
+            }
+
+            await Console.Out.WriteLineAsync(" Success!");
+        }
+
+        catch (Exception e)
+        {
+            await Console.Out.WriteLineAsync(" Failed!");
+            Exceptions.Add($"Could not publish the project; {e.Message}");
+            await CancellationTokenSource.CancelAsync();
+            return;
+        }
+        
+        #endregion
+        
+        #region Index Local Files
+
+        await Console.Out.WriteAsync("Scanning local files...");
+        
+        await RecurseLocalPathAsync(PublishPath);
+
+        if (CancellationTokenSource.IsCancellationRequested)
+            await Console.Out.WriteLineAsync(" Failed!");
+        else        
+            await Console.Out.WriteLineAsync($" {LocalFiles.Count:N0} files... Success!");
+        
+        #endregion
+        
+        #region Index Server Files
+        
+        await Console.Out.WriteAsync("Scanning server files...");
+
         await RecurseSmbPathAsync(Settings.Paths.RemoteRootPath.SetSmbPathSeparators());
+
+        if (CancellationTokenSource.IsCancellationRequested)
+            await Console.Out.WriteLineAsync(" Failed!");
+        else        
+            await Console.Out.WriteLineAsync($" {ServerFiles.Count:N0} files... Success!");
 
         #endregion
     }
@@ -101,7 +160,7 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
 
         if (status == NTStatus.STATUS_SUCCESS)
         {
-            status = fileStore.CreateFile(out var directoryHandle, out var fileStatus, path, AccessMask.GENERIC_READ, FileAttributes.Directory, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE, null);
+            status = fileStore.CreateFile(out var directoryHandle, out _, path, AccessMask.GENERIC_READ, FileAttributes.Directory, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE, null);
 
             if (status == NTStatus.STATUS_SUCCESS)
             {
@@ -112,49 +171,119 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
                 {
                     foreach (var item in fileList)
                     {
-                        var file = (FileDirectoryInformation)item;
-
-                        if (file.FileName is "." or "..")
-                            continue;
+                        if (CancellationTokenSource.IsCancellationRequested)
+                            break;
                         
-                        var isDirectory = (file.FileAttributes & FileAttributes.Directory) == FileAttributes.Directory;
-                        
-                        if (isDirectory)
-                            await RecurseSmbPathAsync($"{path}\\{file.FileName}");
+                        FileDirectoryInformation? file = null;
 
-                        ServerFiles.Add(new FileObject
+                        try
                         {
-                            FullPath = $"{path}\\{file.FileName}",
-                            FilePath =  $"{path}",
-                            FileName = file.FileName,
-                            LastWriteTime = file.LastWriteTime.ToFileTimeUtc(),
-                            FileSizeBytes = file.Length
-                        });
+                            file = (FileDirectoryInformation)item;
+
+                            if (file.FileName is "." or "..")
+                                continue;
+
+                            var filePath = $"{path}\\{file.FileName}";
+
+                            if ((file.FileAttributes & FileAttributes.Hidden) == FileAttributes.Hidden)
+                                continue;
+                            
+                            var isDirectory = (file.FileAttributes & FileAttributes.Directory) == FileAttributes.Directory;
+
+                            if (isDirectory)
+                            {
+                                if (Settings.Paths.RelativeIgnorePaths.Contains(filePath.NormalizePath().TrimStart(Settings.Paths.RemoteRootPath) ?? string.Empty) || Settings.Paths.IgnoreFoldersNamed.Contains(file.FileName))
+                                    continue;
+                                
+                                await RecurseSmbPathAsync($"{path}\\{file.FileName}");
+                            }
+
+                            else
+                            {
+                                if (Settings.Paths.RelativeIgnoreFilePaths.Contains(filePath.NormalizePath().TrimStart(Settings.Paths.RemoteRootPath) ?? string.Empty) || Settings.Paths.IgnoreFilesNamed.Contains(file.FileName))
+                                    continue;
+
+                                ServerFiles.Add(new FileObject
+                                {
+                                    FullPath = filePath.Trim('\\'),
+                                    FilePath = path.Trim('\\'),
+                                    FileName = file.FileName,
+                                    LastWriteTime = file.LastWriteTime.ToFileTimeUtc(),
+                                    FileSizeBytes = file.Length
+                                });
+                            }
+                        }
+                        catch
+                        {
+                            Exceptions.Add($"Could process server file `{(file is null ? item.ToString() : file.FileName)}`");
+                            await CancellationTokenSource.CancelAsync();
+                        }
                     }
                 }
+                else
+                {
+                    Exceptions.Add($"Could not read the contents of server path `{path}`");
+                    await CancellationTokenSource.CancelAsync();
+                }
             }
-        }        
+            else
+            {
+                Exceptions.Add($"Cannot write to server path `{path}`");
+                await CancellationTokenSource.CancelAsync();
+            }
+        }
+        else
+        {
+            Exceptions.Add($"Could not connect to the server share `{Settings.ServerConnection.ShareName}`");
+            await CancellationTokenSource.CancelAsync();
+        }
     }
 
     private async ValueTask RecurseLocalPathAsync(string path)
     {
         foreach (var subdir in Directory.GetDirectories(path))
         {
+            var directory = new DirectoryInfo(subdir);
+            
+            if ((directory.Attributes & System.IO.FileAttributes.Hidden) == System.IO.FileAttributes.Hidden)
+                continue;
+            
+            var trimmed = subdir.TrimPath().TrimStart(TrimmablePublishPath).TrimPath(); 
+            
+            if (Settings.Paths.RelativeIgnorePaths.Contains(trimmed) || Settings.Paths.IgnoreFoldersNamed.Contains(subdir.GetLastPathSegment()))
+                continue;
+            
             await RecurseLocalPathAsync(subdir);
         }
         
         foreach (var filePath in Directory.GetFiles(path))
         {
-            var file = new FileInfo(filePath);
-            
-            LocalFiles.Add(new FileObject
+            try
             {
-                FullPath = filePath,
-                FilePath = file.DirectoryName ?? string.Empty,
-                FileName = file.Name,
-                LastWriteTime = file.LastWriteTime.ToFileTimeUtc(),
-                FileSizeBytes = file.Length
-            });
+                var file = new FileInfo(filePath);
+
+                if ((file.Attributes & System.IO.FileAttributes.Hidden) == System.IO.FileAttributes.Hidden)
+                    continue;
+                
+                var trimmed = filePath.TrimPath().TrimStart(TrimmablePublishPath).TrimPath(); 
+
+                if (Settings.Paths.RelativeIgnoreFilePaths.Contains(trimmed) || Settings.Paths.IgnoreFilesNamed.Contains(file.Name))
+                    continue;
+
+                LocalFiles.Add(new FileObject
+                {
+                    FullPath = filePath,
+                    FilePath = file.DirectoryName.TrimPath(),
+                    FileName = file.Name,
+                    LastWriteTime = file.LastWriteTime.ToFileTimeUtc(),
+                    FileSizeBytes = file.Length
+                });
+            }
+            catch
+            {
+                Exceptions.Add($"Could process local file `{filePath}`");
+                await CancellationTokenSource.CancelAsync();
+            }
         }
     }
 }

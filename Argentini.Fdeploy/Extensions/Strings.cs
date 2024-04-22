@@ -557,17 +557,16 @@ public static class Strings
 		if (string.IsNullOrEmpty(value))
 			return string.Empty;
 
-		var path = value;
+        if (value.IndexOf(Path.DirectorySeparatorChar) > -1)
+            return value;
 
-		path = path.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
-		
-		if (Path.DirectorySeparatorChar != '/')
-			path = path.Replace('/', Path.DirectorySeparatorChar);
+        if (value.IndexOf('/') < 0 && value.IndexOf('\\') < 0)
+            return value;
+        
+		if (Path.DirectorySeparatorChar == '/')
+			return value.Replace('\\', '/');
 
-		if (Path.DirectorySeparatorChar != '\\')
-			path = path.Replace('\\', Path.DirectorySeparatorChar);
-		
-		return path;        
+        return value.Replace('/', '\\');
 	}
 
     /// <summary>
@@ -870,4 +869,36 @@ public static class Strings
 	}
 	
 	#endregion
+
+    public static string TrimPath(this string? path)
+    {
+        return path?.Trim(Path.DirectorySeparatorChar) ?? string.Empty;
+    }
+
+    public static string NormalizePath(this string path)
+    {
+        return path.SetNativePathSeparators().TrimPath();
+    }
+
+    public static void NormalizePaths(this List<string> source)
+    {
+        var list = new List<string>();
+        
+        foreach (var path in source)
+            list.Add(NormalizePath(path));
+
+        source.Clear();
+        source.AddRange(list);
+    }
+
+    public static string GetLastPathSegment(this string filePath)
+    {
+        if (filePath.IndexOf('\\') > -1)
+            return filePath[filePath.LastIndexOf('\\')..].TrimStart('\\');
+
+        if (filePath.IndexOf('/') > -1)
+            return filePath[filePath.LastIndexOf('/')..].TrimStart('/');
+
+        return filePath;
+    }
 }

@@ -129,23 +129,23 @@ public sealed class AppRunner
 
         #region Normalize Paths
 
-        Settings.Project.ProjectFilePath = NormalizePath(Settings.Project.ProjectFilePath);
-        Settings.Paths.RemoteRootPath = NormalizePath(Settings.Paths.RemoteRootPath);
+        Settings.Project.ProjectFilePath = Settings.Project.ProjectFilePath.NormalizePath();
+        Settings.Paths.RemoteRootPath = Settings.Paths.RemoteRootPath.NormalizePath();
 
-        NormalizePaths(Settings.Paths.StaticFilePaths);
-        NormalizePaths(Settings.Paths.RelativeIgnorePaths);
-        NormalizePaths(Settings.Paths.RelativeIgnoreFilePaths);
+        Settings.Paths.StaticFilePaths.NormalizePaths();
+        Settings.Paths.RelativeIgnorePaths.NormalizePaths();
+        Settings.Paths.RelativeIgnoreFilePaths.NormalizePaths();
 
         foreach (var copy in Settings.Paths.StaticFileCopies)
         {
-            copy.Source = NormalizePath(copy.Source);
-            copy.Destination = NormalizePath(copy.Destination);
+            copy.Source = copy.Source.NormalizePath();
+            copy.Destination = copy.Destination.NormalizePath();
         }
         
         foreach (var copy in Settings.Paths.FileCopies)
         {
-            copy.Source = NormalizePath(copy.Source);
-            copy.Destination = NormalizePath(copy.Destination);
+            copy.Source = copy.Source.NormalizePath();
+            copy.Destination = copy.Destination.NormalizePath();
         }
         
         #endregion
@@ -289,21 +289,5 @@ public sealed class AppRunner
             await Console.Out.WriteAsync($"{topic}{" ".Repeat(maxTopicLength - topic.Length)}");
         
         await Console.Out.WriteLineAsync($" : {message}");
-    }
-    
-    public static string NormalizePath(string path)
-    {
-        return path.SetNativePathSeparators().Trim(Path.DirectorySeparatorChar);
-    }
-
-    public static void NormalizePaths(List<string> source)
-    {
-        var list = new List<string>();
-        
-        foreach (var path in source)
-            list.Add(NormalizePath(path));
-
-        source.Clear();
-        source.AddRange(list);
     }
 }
