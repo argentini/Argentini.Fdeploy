@@ -12,4 +12,5 @@ public sealed class Settings
     public ServerConnectionSettings ServerConnection { get; set; } = new();
     public ProjectSettings Project { get; set; } = new();
     public PathSettings Paths { get; set; } = new();
+    public OfflineSettings Offline { get; set; } = new();
 }

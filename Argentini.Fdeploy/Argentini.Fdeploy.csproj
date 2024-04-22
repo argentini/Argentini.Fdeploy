@@ -16,6 +16,8 @@
     <ItemGroup>
       <None Remove="yaml\fdeploy.yml" />
       <Resource Include="yaml\fdeploy.yml" />
+      <None Remove="html\app_offline.htm" />
+      <Resource Include="html\app_offline.htm" />
     </ItemGroup>
 
 </Project>

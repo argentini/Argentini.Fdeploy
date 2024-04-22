@@ -26,6 +26,12 @@ ServerConnection:
     UserName: username
     Password: password
 
+Offline:
+    
+    MetaTitle: "Unavailable for Maintenance"
+    PageTitle: "Unavailable for Maintenance"
+    PageHtml: "<p>The website is being updated and should be available shortly.</p><p><strong>Check back soon!</strong></p>"
+
 Project:
 
     # Project file (.csproj) path and filename, relative to the location of this file

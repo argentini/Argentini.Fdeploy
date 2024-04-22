@@ -38,6 +38,7 @@ public sealed class AppRunner
     public List<string> Exceptions { get; } = [];
     public List<string> CliArguments { get; } = [];
     public Settings Settings { get; set; } = new();
+    public string AppOfflineMarkup { get; set; } = string.Empty;
     public string YamlProjectFilePath { get; set; } = string.Empty;
     public string WorkingPath { get; set; } = string.Empty;
 
@@ -215,6 +216,11 @@ public sealed class AppRunner
         if (CancellationTokenSource.IsCancellationRequested)
             return;
         
+        AppOfflineMarkup = await File.ReadAllTextAsync(Path.Combine(await GetEmbeddedHtmlPathAsync(CancellationTokenSource), "app_offline.htm"), CancellationTokenSource.Token);
+        AppOfflineMarkup = AppOfflineMarkup.Replace("{{MetaTitle}}", Settings.Offline.MetaTitle);
+        AppOfflineMarkup = AppOfflineMarkup.Replace("{{PageTitle}}", Settings.Offline.PageTitle);
+        AppOfflineMarkup = AppOfflineMarkup.Replace("{{PageHtml}}", Settings.Offline.PageHtml);
+        
         await ColonOutAsync("Started Deployment", $"{DateTime.Now:HH:mm:ss.fff}");
         await Console.Out.WriteLineAsync();
 
@@ -266,6 +272,43 @@ public sealed class AppRunner
         if (string.IsNullOrEmpty(workingPath) || Directory.Exists(workingPath) == false)
         {
             Exceptions.Add("Embedded YAML resources cannot be found.");
+            await cancellationToken.CancelAsync();
+            return string.Empty;
+        }
+        
+        return workingPath;
+    }
+
+    public async ValueTask<string> GetEmbeddedHtmlPathAsync(CancellationTokenSource cancellationToken)
+    {
+        var workingPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+
+        while (workingPath.LastIndexOf(Path.DirectorySeparatorChar) > -1)
+        {
+            workingPath = workingPath[..workingPath.LastIndexOf(Path.DirectorySeparatorChar)];
+            
+#if DEBUG
+            if (Directory.Exists(Path.Combine(workingPath, "html")) == false)
+                continue;
+
+            var tempPath = workingPath; 
+			
+            workingPath = Path.Combine(tempPath, "html");
+#else
+			if (Directory.Exists(Path.Combine(workingPath, "contentFiles")) == false)
+				continue;
+		
+			var tempPath = workingPath; 
+
+			workingPath = Path.Combine(tempPath, "contentFiles", "any", "any", "html");
+#endif
+            break;
+        }
+
+        // ReSharper disable once InvertIf
+        if (string.IsNullOrEmpty(workingPath) || Directory.Exists(workingPath) == false)
+        {
+            Exceptions.Add("Embedded HTML resources cannot be found.");
             await cancellationToken.CancelAsync();
             return string.Empty;
         }
