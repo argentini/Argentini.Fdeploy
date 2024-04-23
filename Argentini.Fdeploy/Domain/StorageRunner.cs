@@ -141,19 +141,19 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
         
         #endregion
 
-        // await Spinner.StartAsync("Test copy...", async spinner =>
-        // {
-        //     await CopyFileAsync("/Users/magic/Developer/Argentini.Fdeploy/clean.sh", "wwwroot/xxxx/abc/clean.sh");
-        //     
-        //     if (CancellationTokenSource.IsCancellationRequested)
-        //         spinner.Fail("Test copy... Failed!");
-        //     else
-        //         spinner.Text = "Test copy... Success!";
-        //
-        // }, Patterns.Dots, Patterns.Line);
-        //
-        // if (CancellationTokenSource.IsCancellationRequested)
-        //     return;
+        await Spinner.StartAsync("Test copy...", async spinner =>
+        {
+            await CopyFileAsync("/Users/magic/Developer/Argentini.Fdeploy/clean.sh", $@"{Settings.Paths.RemoteRootPath}\wwwroot\xxxx\abc\clean.sh", spinner);
+            
+            if (CancellationTokenSource.IsCancellationRequested)
+                spinner.Fail("Test copy... Failed!");
+            else
+                spinner.Text = "Test copy... Success!";
+        
+        }, Patterns.Dots, Patterns.Line);
+        
+        if (CancellationTokenSource.IsCancellationRequested)
+            return;
         
         #region Publish Project
 
@@ -220,7 +220,7 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
         
         await Spinner.StartAsync("Indexing server files...", async spinner =>
         {
-            await RecurseSmbPathAsync(Settings.Paths.RemoteRootPath.SetSmbPathSeparators(), spinner);
+            await RecurseSmbPathAsync(Settings.Paths.RemoteRootPath.NormalizeSmbPath(), spinner);
 
             if (CancellationTokenSource.IsCancellationRequested)
                 spinner.Fail("Indexing server files... Failed!");
@@ -411,57 +411,58 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
         }
     }
 
-    private async ValueTask<bool> FileExistsAsync(string relativePathWithFile)
+    private async ValueTask<bool> EnsureFileStoreAsync()
     {
         if (CancellationTokenSource.IsCancellationRequested)
             return false;
 
-        var status = NTStatus.STATUS_SUCCESS;
+        if (FileStore is not null)
+            return true;
 
-        if (FileStore is null)
-        {
-            FileStore = Client.TreeConnect(Settings.ServerConnection.ShareName, out status);
+        FileStore = Client.TreeConnect(Settings.ServerConnection.ShareName, out var status);
 
-            if (status != NTStatus.STATUS_SUCCESS)
-            {
-                Exceptions.Add($"Could not connect to the file share `{Settings.ServerConnection.ShareName}`");
-                await CancellationTokenSource.CancelAsync();
-                return false;
-            }
-        }
+        if (status == NTStatus.STATUS_SUCCESS)
+            return true;
         
-        var remotePath = $@"{Settings.Paths.RemoteRootPath.SetSmbPathSeparators()}\{relativePathWithFile.TrimPath().SetSmbPathSeparators().TrimPath()}";
-        
-        status = FileStore.CreateFile(out var fileHandle, out _, remotePath, AccessMask.GENERIC_READ | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.Read, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+        Exceptions.Add($"Could not connect to the file share `{Settings.ServerConnection.ShareName}`");
+        await CancellationTokenSource.CancelAsync();
 
-        if (fileHandle is not null)
-            FileStore.CloseFile(fileHandle);
-        
-        return status == NTStatus.STATUS_SUCCESS;
+        return false;
     }
-
-    private async ValueTask<bool> PathExistsAsync(string relativePathWithoutFile)
+    
+    private async ValueTask<bool> FileExistsAsync(string filePath)
     {
         if (CancellationTokenSource.IsCancellationRequested)
             return false;
 
-        var status = NTStatus.STATUS_SUCCESS;
+        if (await EnsureFileStoreAsync() == false)
+            return false;
 
         if (FileStore is null)
-        {
-            FileStore = Client.TreeConnect(Settings.ServerConnection.ShareName, out status);
+            return false;
 
-            if (status != NTStatus.STATUS_SUCCESS)
-            {
-                Exceptions.Add($"Could not connect to the file share `{Settings.ServerConnection.ShareName}`");
-                await CancellationTokenSource.CancelAsync();
-                return false;
-            }
-        }
+        var remotePath = filePath.NormalizeSmbPath();
+
+        var status = FileStore.CreateFile(out var fileHandle, out _, remotePath, AccessMask.GENERIC_READ | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.Read, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+
+        if (fileHandle is not null)
+            FileStore.CloseFile(fileHandle);
+            
+        return status == NTStatus.STATUS_SUCCESS;
+    }
+
+    private async ValueTask<bool> PathExistsAsync(string destinationPath)
+    {
+        if (CancellationTokenSource.IsCancellationRequested)
+            return false;
+
+        if (await EnsureFileStoreAsync() == false)
+            return false;
+
+        if (FileStore is null)
+            return false;
         
-        var remotePath = $@"{Settings.Paths.RemoteRootPath.SetSmbPathSeparators()}\{relativePathWithoutFile.TrimPath().SetSmbPathSeparators().TrimPath()}";
-        
-        status = FileStore.CreateFile(out var fileHandle, out _, remotePath, AccessMask.GENERIC_READ, FileAttributes.Directory, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE, null);
+        var status = FileStore.CreateFile(out var fileHandle, out _, destinationPath.NormalizeSmbPath(), AccessMask.GENERIC_READ, FileAttributes.Directory, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE, null);
 
         if (fileHandle is not null)
             FileStore.CloseFile(fileHandle);
@@ -469,29 +470,21 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
         return status == NTStatus.STATUS_SUCCESS;
     }
 
-    private async ValueTask EnsurePathExists(string relativePathWithoutFile)
+    private async ValueTask EnsurePathExists(string destinationPath)
     {
         if (CancellationTokenSource.IsCancellationRequested)
             return;
         
-        var status = NTStatus.STATUS_SUCCESS;
-        
-        if (FileStore is null)
-        {
-            FileStore = Client.TreeConnect(Settings.ServerConnection.ShareName, out status);
-
-            if (status != NTStatus.STATUS_SUCCESS)
-            {
-                Exceptions.Add($"Could not connect to the file share `{Settings.ServerConnection.ShareName}`");
-                await CancellationTokenSource.CancelAsync();
-                return;
-            }
-        }
-
-        if (await PathExistsAsync(relativePathWithoutFile))
+        if (await EnsureFileStoreAsync() == false)
             return;
 
-        var segments = relativePathWithoutFile.TrimPath().SetSmbPathSeparators().TrimPath().Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        if (FileStore is null)
+            return;
+
+        if (await PathExistsAsync(destinationPath))
+            return;
+
+        var segments = destinationPath.NormalizeSmbPath().Split('\\', StringSplitOptions.RemoveEmptyEntries);
         var buildingPath = string.Empty;
 
         foreach (var segment in segments)
@@ -504,7 +497,7 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
             if (await PathExistsAsync(buildingPath))
                 continue;
             
-            status = FileStore.CreateFile(out _, out _, $@"{Settings.Paths.RemoteRootPath.SetSmbPathSeparators()}\{buildingPath}", AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_CREATE, CreateOptions.FILE_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+            var status = FileStore.CreateFile(out _, out _, $"{buildingPath}", AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_CREATE, CreateOptions.FILE_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
 
             if (status == NTStatus.STATUS_SUCCESS)
                 continue;
@@ -522,70 +515,78 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
         await CopyFileAsync(relativePathWithFile, relativePathWithFile);
     }
     
-    private async ValueTask CopyFileAsync(string sourcePath, string destinationPath)
+    private async ValueTask CopyFileAsync(string sourceFilePath, string destinationFilePath, Spinner? spinner = null)
     {
         if (CancellationTokenSource.IsCancellationRequested)
             return;
         
-        var status = NTStatus.STATUS_SUCCESS;
-        
+        if (await EnsureFileStoreAsync() == false)
+            return;
+
         if (FileStore is null)
-        {
-            FileStore = Client.TreeConnect(Settings.ServerConnection.ShareName, out status);
+            return;
 
-            if (status != NTStatus.STATUS_SUCCESS)
-            {
-                Exceptions.Add($"Could not connect to the file share `{Settings.ServerConnection.ShareName}`");
-                await CancellationTokenSource.CancelAsync();
-                return;
-            }
-        }
+        var smbFilePath = destinationFilePath.NormalizeSmbPath();
+        var destinationPathWithoutFile = smbFilePath[..smbFilePath.LastIndexOf('\\')];
 
-        var smbPath = destinationPath.TrimPath().SetSmbPathSeparators().TrimPath();
-        var relativePathWithoutFile = smbPath[..smbPath.LastIndexOf('\\')];
-
-        await EnsurePathExists(relativePathWithoutFile);
+        await EnsurePathExists(destinationPathWithoutFile);
 
         if (CancellationTokenSource.IsCancellationRequested)
             return;
 
-        var remoteFilePath = $@"{Settings.Paths.RemoteRootPath.SetSmbPathSeparators()}\{smbPath}";
-        var localFileStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read);
-        var fileExists = await FileExistsAsync(smbPath);
-
-        status = FileStore.CreateFile(out var fileHandle, out _, remoteFilePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, fileExists ? CreateDisposition.FILE_OVERWRITE : CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+        var localFileStream = new FileStream(sourceFilePath, FileMode.Open, FileAccess.Read);
+        var success = true;
+        var retries = Settings.RetryCount > 0 ? Settings.RetryCount : 1;
         
-        if (status == NTStatus.STATUS_SUCCESS)
+        for (var attempt = 0; attempt < retries; attempt++)
         {
-            var writeOffset = 0;
-            
-            while (localFileStream.Position < localFileStream.Length)
-            {
-                var buffer = new byte[(int)Client.MaxWriteSize];
-                var bytesRead = localFileStream.Read(buffer, 0, buffer.Length);
-                
-                if (bytesRead < (int)Client.MaxWriteSize)
-                {
-                    Array.Resize(ref buffer, bytesRead);
-                }
-                
-                status = FileStore.WriteFile(out _, fileHandle, writeOffset, buffer);
+            var fileExists = await FileExistsAsync(smbFilePath);
 
-                if (status != NTStatus.STATUS_SUCCESS)
-                {
-                    Exceptions.Add($"Failed to write file `{remoteFilePath}`");
-                    await CancellationTokenSource.CancelAsync();
-                    return;
-                }
+            var status = FileStore.CreateFile(out var fileHandle, out _, smbFilePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, fileExists ? CreateDisposition.FILE_OVERWRITE : CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+            
+            if (status == NTStatus.STATUS_SUCCESS)
+            {
+                var writeOffset = 0;
                 
-                writeOffset += bytesRead;
+                while (localFileStream.Position < localFileStream.Length)
+                {
+                    var buffer = new byte[(int)Client.MaxWriteSize];
+                    var bytesRead = localFileStream.Read(buffer, 0, buffer.Length);
+                    
+                    if (bytesRead < (int)Client.MaxWriteSize)
+                    {
+                        Array.Resize(ref buffer, bytesRead);
+                    }
+                    
+                    status = FileStore.WriteFile(out _, fileHandle, writeOffset, buffer);
+
+                    if (status != NTStatus.STATUS_SUCCESS)
+                    {
+                        success = false;
+                        break;
+                    }
+
+                    writeOffset += bytesRead;
+                }
+
+                status = FileStore.CloseFile(fileHandle);
             }
 
-            status = FileStore.CloseFile(fileHandle);
+            if (success)
+                break;
+
+            if (spinner is not null)
+            {
+                var text = spinner.Text.TrimEnd($" Retry {attempt}...");
+                spinner.Text = $"{text} Retry {attempt + 1}...";
+            }
+
+            await Task.Delay(Settings.WriteRetryDelaySeconds * 1000);
         }
-        else
+
+        if (success == false)
         {
-            Exceptions.Add($"Failed to create file `{remoteFilePath}`");
+            Exceptions.Add($"Failed to write file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{smbFilePath}`");
             await CancellationTokenSource.CancelAsync();
         }
     }

@@ -8,6 +8,7 @@ public sealed class Settings
     
     public int ServerOfflineDelaySeconds { get; set; } = 10;
     public int WriteRetryDelaySeconds { get; set; } = 10;
+    public int RetryCount { get; set; } = 10;
     
     public ServerConnectionSettings ServerConnection { get; set; } = new();
     public ProjectSettings Project { get; set; } = new();

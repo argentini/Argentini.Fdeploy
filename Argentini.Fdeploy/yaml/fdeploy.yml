@@ -18,6 +18,9 @@ ServerOfflineDelaySeconds: 10
 # Seconds to wait after a failed write; default is 10
 WriteRetryDelaySeconds: 10
 
+# Number of attempts to write before giving up; default is 10
+RetryCount: 10
+
 ServerConnection:
     
     ServerAddress: 127.0.0.1

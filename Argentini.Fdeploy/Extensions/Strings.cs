@@ -578,10 +578,10 @@ public static class Strings
         if (string.IsNullOrEmpty(value))
             return string.Empty;
 
-        if (value.IndexOf('\\') > -1)
-            return value;
+        if (value.IndexOf('/') > -1)
+            return value.Replace('/', '\\');        
 
-        return value.Replace('/', '\\');        
+        return value;        
     }
 
 	/// <summary>
@@ -873,6 +873,11 @@ public static class Strings
     public static string TrimPath(this string? path)
     {
         return path?.Trim('/').Trim('\\') ?? string.Empty;
+    }
+
+    public static string NormalizeSmbPath(this string path)
+    {
+        return path.TrimPath().SetSmbPathSeparators().TrimPath();
     }
 
     public static string NormalizePath(this string path)
