@@ -517,56 +517,9 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
     
     private async ValueTask CopyFileAsync(FileObject sourceFo)
     {
-        if (CancellationTokenSource.IsCancellationRequested)
-            return;
+        var relativePathWithFile = sourceFo.FullPath.TrimPath().TrimStart(TrimmablePublishPath).TrimPath();
         
-        var status = NTStatus.STATUS_SUCCESS;
-        
-        if (FileStore is null)
-        {
-            FileStore = Client.TreeConnect(Settings.ServerConnection.ShareName, out status);
-
-            if (status != NTStatus.STATUS_SUCCESS)
-            {
-                Exceptions.Add($"Could not connect to the file share `{Settings.ServerConnection.ShareName}`");
-                await CancellationTokenSource.CancelAsync();
-                return;
-            }
-        }
-
-        var remoteFilePath = $"{Settings.Paths.RemoteRootPath.SetSmbPathSeparators()}\\{sourceFo.FullPath.TrimPath().SetSmbPathSeparators()}";
-        var localFileStream = new FileStream(sourceFo.FullPath, FileMode.Open, FileAccess.Read);
-
-        status = FileStore.CreateFile(out var fileHandle, out _, remoteFilePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
-        
-        if (status == NTStatus.STATUS_SUCCESS)
-        {
-            var writeOffset = 0;
-            
-            while (localFileStream.Position < localFileStream.Length)
-            {
-                var buffer = new byte[(int)Client.MaxWriteSize];
-                var bytesRead = localFileStream.Read(buffer, 0, buffer.Length);
-                
-                if (bytesRead < (int)Client.MaxWriteSize)
-                {
-                    Array.Resize(ref buffer, bytesRead);
-                }
-                int numberOfBytesWritten;
-                status = FileStore.WriteFile(out numberOfBytesWritten, fileHandle, writeOffset, buffer);
-
-                if (status != NTStatus.STATUS_SUCCESS)
-                {
-                    Exceptions.Add($"Failed to write file `{remoteFilePath}`");
-                    await CancellationTokenSource.CancelAsync();
-                    return;
-                }
-                
-                writeOffset += bytesRead;
-            }
-
-            status = FileStore.CloseFile(fileHandle);
-        }
+        await CopyFileAsync(relativePathWithFile, relativePathWithFile);
     }
     
     private async ValueTask CopyFileAsync(string sourcePath, string destinationPath)
