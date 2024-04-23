@@ -154,6 +154,20 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
         
         if (CancellationTokenSource.IsCancellationRequested)
             return;
+
+        await Spinner.StartAsync("Test delete...", async spinner =>
+        {
+            await DeleteServerFileAsync($@"{Settings.Paths.RemoteRootPath}\wwwroot\xxxx\abc\clean.sh", spinner);
+            
+            if (CancellationTokenSource.IsCancellationRequested)
+                spinner.Fail("Test delete... Failed!");
+            else
+                spinner.Text = "Test delete... Success!";
+        
+        }, Patterns.Dots, Patterns.Line);
+        
+        if (CancellationTokenSource.IsCancellationRequested)
+            return;
         
         #region Publish Project
 
@@ -441,9 +455,7 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
         if (FileStore is null)
             return false;
 
-        var remotePath = filePath.NormalizeSmbPath();
-
-        var status = FileStore.CreateFile(out var fileHandle, out _, remotePath, AccessMask.GENERIC_READ | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.Read, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+        var status = FileStore.CreateFile(out var fileHandle, out _, filePath.NormalizeSmbPath(), AccessMask.GENERIC_READ | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.Read, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
 
         if (fileHandle is not null)
             FileStore.CloseFile(fileHandle);
@@ -505,7 +517,10 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
                 var status = FileStore.CreateFile(out _, out _, $"{buildingPath}", AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_CREATE, CreateOptions.FILE_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
 
                 if (status == NTStatus.STATUS_SUCCESS)
+                {
+                    success = true;
                     break;
+                }
 
                 success = false;
 
@@ -560,7 +575,6 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
         for (var attempt = 0; attempt < retries; attempt++)
         {
             var fileExists = await FileExistsAsync(smbFilePath);
-
             var status = FileStore.CreateFile(out var fileHandle, out _, smbFilePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, fileExists ? CreateDisposition.FILE_OVERWRITE : CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
             
             if (status == NTStatus.STATUS_SUCCESS)
@@ -585,6 +599,7 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
                         break;
                     }
 
+                    success = true;
                     writeOffset += bytesRead;
                 }
 
@@ -606,6 +621,67 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
         if (success == false)
         {
             Exceptions.Add($"Failed to write file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{smbFilePath}`");
+            await CancellationTokenSource.CancelAsync();
+        }
+    }
+    
+    private async ValueTask DeleteServerFileAsync(string serverFilePath, Spinner? spinner = null)
+    {
+        if (CancellationTokenSource.IsCancellationRequested)
+            return;
+        
+        if (await EnsureFileStoreAsync() == false)
+            return;
+
+        if (FileStore is null)
+            return;
+
+        var smbFilePath = serverFilePath.NormalizeSmbPath();
+
+        if (await FileExistsAsync(smbFilePath) == false)
+            return;
+        
+        if (CancellationTokenSource.IsCancellationRequested)
+            return;
+
+        var success = true;
+        var retries = Settings.RetryCount > 0 ? Settings.RetryCount : 1;
+        
+        for (var attempt = 0; attempt < retries; attempt++)
+        {
+            var status = FileStore.CreateFile(out var fileHandle, out _, smbFilePath, AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+
+            if (status == NTStatus.STATUS_SUCCESS)
+            {
+                var fileDispositionInformation = new FileDispositionInformation
+                {
+                    DeletePending = true
+                };
+                
+                status = FileStore.SetFileInformation(fileHandle, fileDispositionInformation);
+                success = status == NTStatus.STATUS_SUCCESS;
+                status = FileStore.CloseFile(fileHandle);                
+            }
+            else
+            {
+                success = false;
+            }
+
+            if (success)
+                break;
+
+            if (spinner is not null)
+            {
+                var text = spinner.Text.TrimEnd($" Retry {attempt}...");
+                spinner.Text = $"{text} Retry {attempt + 1}...";
+            }
+
+            await Task.Delay(Settings.WriteRetryDelaySeconds * 1000);
+        }
+
+        if (success == false)
+        {
+            Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{smbFilePath}`");
             await CancellationTokenSource.CancelAsync();
         }
     }
