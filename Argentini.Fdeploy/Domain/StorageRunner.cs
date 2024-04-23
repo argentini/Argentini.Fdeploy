@@ -470,7 +470,7 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
         return status == NTStatus.STATUS_SUCCESS;
     }
 
-    private async ValueTask EnsurePathExists(string destinationPath)
+    private async ValueTask EnsurePathExists(string destinationPath, Spinner? spinner = null)
     {
         if (CancellationTokenSource.IsCancellationRequested)
             return;
@@ -497,12 +497,31 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
             if (await PathExistsAsync(buildingPath))
                 continue;
             
-            var status = FileStore.CreateFile(out _, out _, $"{buildingPath}", AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_CREATE, CreateOptions.FILE_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+            var success = true;
+            var retries = Settings.RetryCount > 0 ? Settings.RetryCount : 1;
+        
+            for (var attempt = 0; attempt < retries; attempt++)
+            {
+                var status = FileStore.CreateFile(out _, out _, $"{buildingPath}", AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_CREATE, CreateOptions.FILE_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
 
-            if (status == NTStatus.STATUS_SUCCESS)
+                if (status == NTStatus.STATUS_SUCCESS)
+                    break;
+
+                success = false;
+
+                if (spinner is not null)
+                {
+                    var text = spinner.Text.TrimEnd($" Retry {attempt}...");
+                    spinner.Text = $"{text} Retry {attempt + 1}...";
+                }
+
+                await Task.Delay(Settings.WriteRetryDelaySeconds * 1000);
+            }
+
+            if (success)
                 continue;
             
-            Exceptions.Add($"Could not create directory `{buildingPath}`");
+            Exceptions.Add($"Failed to create directory after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{buildingPath}`");
             await CancellationTokenSource.CancelAsync();
             break;
         }
@@ -529,7 +548,7 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
         var smbFilePath = destinationFilePath.NormalizeSmbPath();
         var destinationPathWithoutFile = smbFilePath[..smbFilePath.LastIndexOf('\\')];
 
-        await EnsurePathExists(destinationPathWithoutFile);
+        await EnsurePathExists(destinationPathWithoutFile, spinner);
 
         if (CancellationTokenSource.IsCancellationRequested)
             return;
