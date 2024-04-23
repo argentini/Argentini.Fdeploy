@@ -11,6 +11,7 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
     #region App State Properties
     
     public SMB2Client Client { get; } = new();
+    public ISMBFileStore? FileStore { get; set; }
     public Settings Settings { get; } = settings;
     public List<string> Exceptions { get; } = exceptions;
     public CancellationTokenSource CancellationTokenSource { get; } = cancellationTokenSource;
@@ -140,6 +141,20 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
         
         #endregion
 
+        // await Spinner.StartAsync("Test copy...", async spinner =>
+        // {
+        //     await CopyFileAsync("/Users/magic/Developer/Argentini.Fdeploy/clean.sh", "wwwroot/xxxx/abc/clean.sh");
+        //     
+        //     if (CancellationTokenSource.IsCancellationRequested)
+        //         spinner.Fail("Test copy... Failed!");
+        //     else
+        //         spinner.Text = "Test copy... Success!";
+        //
+        // }, Patterns.Dots, Patterns.Line);
+        //
+        // if (CancellationTokenSource.IsCancellationRequested)
+        //     return;
+        
         #region Publish Project
 
         PublishPath = $"{WorkingPath}{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}publish";
@@ -218,92 +233,132 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
             return;
 
         #endregion
+        
+        #region Static File Sync
+        
+        // foreach (var path in Settings.Paths.StaticFilePaths)
+        // {
+        // }
+        
+        #endregion
+
+        #region Process Static File Copies
+        
+        #endregion
+
+        #region Take Server Offline
+        
+        #endregion
+
+        #region Process File Deletions
+        
+        #endregion
+
+        #region File Sync
+        
+        #endregion
+        
+        #region Process File Copies
+        
+        #endregion
+        
+        #region Bring Server Online
+        
+        #endregion
+        
+        #region Local Cleanup
+        
+        #endregion
     }
 
     private async ValueTask RecurseSmbPathAsync(string path, Spinner spinner, int level = 0)
     {
-        var fileStore = Client.TreeConnect(Settings.ServerConnection.ShareName, out var status);
+        var status = NTStatus.STATUS_SUCCESS;
+        
+        if (FileStore is null)
+        {
+            FileStore = Client.TreeConnect(Settings.ServerConnection.ShareName, out status);
+
+            if (status != NTStatus.STATUS_SUCCESS)
+            {
+                Exceptions.Add($"Could not connect to the file share `{Settings.ServerConnection.ShareName}`");
+                await CancellationTokenSource.CancelAsync();
+                return;
+            }
+        }
+
+        status = FileStore.CreateFile(out var directoryHandle, out _, path, AccessMask.GENERIC_READ, FileAttributes.Directory, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE, null);
 
         if (status == NTStatus.STATUS_SUCCESS)
         {
-            status = fileStore.CreateFile(out var directoryHandle, out _, path, AccessMask.GENERIC_READ, FileAttributes.Directory, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE, null);
+            status = FileStore.QueryDirectory(out var fileList, directoryHandle, "*", FileInformationClass.FileDirectoryInformation);
+            status = FileStore.CloseFile(directoryHandle);
 
             if (status == NTStatus.STATUS_SUCCESS)
             {
-                status = fileStore.QueryDirectory(out var fileList, directoryHandle, "*", FileInformationClass.FileDirectoryInformation);
-                status = fileStore.CloseFile(directoryHandle);
-
-                if (status == NTStatus.STATUS_SUCCESS)
+                foreach (var item in fileList)
                 {
-                    foreach (var item in fileList)
+                    if (CancellationTokenSource.IsCancellationRequested)
+                        break;
+                    
+                    FileDirectoryInformation? file = null;
+
+                    try
                     {
-                        if (CancellationTokenSource.IsCancellationRequested)
-                            break;
+                        file = (FileDirectoryInformation)item;
+
+                        if (file.FileName is "." or "..")
+                            continue;
+
+                        var filePath = $"{path}\\{file.FileName}";
+
+                        if ((file.FileAttributes & FileAttributes.Hidden) == FileAttributes.Hidden)
+                            continue;
                         
-                        FileDirectoryInformation? file = null;
+                        var isDirectory = (file.FileAttributes & FileAttributes.Directory) == FileAttributes.Directory;
 
-                        try
+                        if (isDirectory)
                         {
-                            file = (FileDirectoryInformation)item;
-
-                            if (file.FileName is "." or "..")
-                                continue;
-
-                            var filePath = $"{path}\\{file.FileName}";
-
-                            if ((file.FileAttributes & FileAttributes.Hidden) == FileAttributes.Hidden)
+                            if (Settings.Paths.RelativeIgnorePaths.Contains(filePath.NormalizePath().TrimStart(Settings.Paths.RemoteRootPath).TrimPath()) || Settings.Paths.IgnoreFoldersNamed.Contains(file.FileName))
                                 continue;
                             
-                            var isDirectory = (file.FileAttributes & FileAttributes.Directory) == FileAttributes.Directory;
-
-                            if (isDirectory)
-                            {
-                                if (Settings.Paths.RelativeIgnorePaths.Contains(filePath.NormalizePath().TrimStart(Settings.Paths.RemoteRootPath).TrimPath()) || Settings.Paths.IgnoreFoldersNamed.Contains(file.FileName))
-                                    continue;
-                                
-                                if (level == 0)
-                                    spinner.Text = $"Indexing server files... {file.FileName}/...";
-                                
-                                await RecurseSmbPathAsync($"{path}\\{file.FileName}", spinner, level + 1);
-                            }
-
-                            else
-                            {
-                                if (Settings.Paths.RelativeIgnoreFilePaths.Contains(filePath.NormalizePath().TrimStart(Settings.Paths.RemoteRootPath).TrimPath()) || Settings.Paths.IgnoreFilesNamed.Contains(file.FileName))
-                                    continue;
-
-                                ServerFiles.Add(new FileObject
-                                {
-                                    FullPath = filePath.Trim('\\'),
-                                    FilePath = path.Trim('\\'),
-                                    FileName = file.FileName,
-                                    LastWriteTime = file.LastWriteTime.ToFileTimeUtc(),
-                                    FileSizeBytes = file.Length
-                                });
-                            }
+                            if (level == 0)
+                                spinner.Text = $"Indexing server files... {file.FileName}/...";
+                            
+                            await RecurseSmbPathAsync($"{path}\\{file.FileName}", spinner, level + 1);
                         }
-                        catch
+
+                        else
                         {
-                            Exceptions.Add($"Could process server file `{(file is null ? item.ToString() : file.FileName)}`");
-                            await CancellationTokenSource.CancelAsync();
+                            if (Settings.Paths.RelativeIgnoreFilePaths.Contains(filePath.NormalizePath().TrimStart(Settings.Paths.RemoteRootPath).TrimPath()) || Settings.Paths.IgnoreFilesNamed.Contains(file.FileName))
+                                continue;
+
+                            ServerFiles.Add(new FileObject
+                            {
+                                FullPath = filePath.Trim('\\'),
+                                FilePath = path.Trim('\\'),
+                                FileName = file.FileName,
+                                LastWriteTime = file.LastWriteTime.ToFileTimeUtc(),
+                                FileSizeBytes = file.Length
+                            });
                         }
                     }
-                }
-                else
-                {
-                    Exceptions.Add($"Could not read the contents of server path `{path}`");
-                    await CancellationTokenSource.CancelAsync();
+                    catch
+                    {
+                        Exceptions.Add($"Could process server file `{(file is null ? item.ToString() : file.FileName)}`");
+                        await CancellationTokenSource.CancelAsync();
+                    }
                 }
             }
             else
             {
-                Exceptions.Add($"Cannot write to server path `{path}`");
+                Exceptions.Add($"Could not read the contents of server path `{path}`");
                 await CancellationTokenSource.CancelAsync();
             }
         }
         else
         {
-            Exceptions.Add($"Could not connect to the server share `{Settings.ServerConnection.ShareName}`");
+            Exceptions.Add($"Cannot write to server path `{path}`");
             await CancellationTokenSource.CancelAsync();
         }
     }
@@ -353,6 +408,232 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
                 Exceptions.Add($"Could process local file `{filePath}`");
                 await CancellationTokenSource.CancelAsync();
             }
+        }
+    }
+
+    private async ValueTask<bool> FileExistsAsync(string relativePathWithFile)
+    {
+        if (CancellationTokenSource.IsCancellationRequested)
+            return false;
+
+        var status = NTStatus.STATUS_SUCCESS;
+
+        if (FileStore is null)
+        {
+            FileStore = Client.TreeConnect(Settings.ServerConnection.ShareName, out status);
+
+            if (status != NTStatus.STATUS_SUCCESS)
+            {
+                Exceptions.Add($"Could not connect to the file share `{Settings.ServerConnection.ShareName}`");
+                await CancellationTokenSource.CancelAsync();
+                return false;
+            }
+        }
+        
+        var remotePath = $@"{Settings.Paths.RemoteRootPath.SetSmbPathSeparators()}\{relativePathWithFile.TrimPath().SetSmbPathSeparators().TrimPath()}";
+        
+        status = FileStore.CreateFile(out var fileHandle, out _, remotePath, AccessMask.GENERIC_READ | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.Read, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+
+        if (fileHandle is not null)
+            FileStore.CloseFile(fileHandle);
+        
+        return status == NTStatus.STATUS_SUCCESS;
+    }
+
+    private async ValueTask<bool> PathExistsAsync(string relativePathWithoutFile)
+    {
+        if (CancellationTokenSource.IsCancellationRequested)
+            return false;
+
+        var status = NTStatus.STATUS_SUCCESS;
+
+        if (FileStore is null)
+        {
+            FileStore = Client.TreeConnect(Settings.ServerConnection.ShareName, out status);
+
+            if (status != NTStatus.STATUS_SUCCESS)
+            {
+                Exceptions.Add($"Could not connect to the file share `{Settings.ServerConnection.ShareName}`");
+                await CancellationTokenSource.CancelAsync();
+                return false;
+            }
+        }
+        
+        var remotePath = $@"{Settings.Paths.RemoteRootPath.SetSmbPathSeparators()}\{relativePathWithoutFile.TrimPath().SetSmbPathSeparators().TrimPath()}";
+        
+        status = FileStore.CreateFile(out var fileHandle, out _, remotePath, AccessMask.GENERIC_READ, FileAttributes.Directory, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE, null);
+
+        if (fileHandle is not null)
+            FileStore.CloseFile(fileHandle);
+
+        return status == NTStatus.STATUS_SUCCESS;
+    }
+
+    private async ValueTask EnsurePathExists(string relativePathWithoutFile)
+    {
+        if (CancellationTokenSource.IsCancellationRequested)
+            return;
+        
+        var status = NTStatus.STATUS_SUCCESS;
+        
+        if (FileStore is null)
+        {
+            FileStore = Client.TreeConnect(Settings.ServerConnection.ShareName, out status);
+
+            if (status != NTStatus.STATUS_SUCCESS)
+            {
+                Exceptions.Add($"Could not connect to the file share `{Settings.ServerConnection.ShareName}`");
+                await CancellationTokenSource.CancelAsync();
+                return;
+            }
+        }
+
+        if (await PathExistsAsync(relativePathWithoutFile))
+            return;
+
+        var segments = relativePathWithoutFile.TrimPath().SetSmbPathSeparators().TrimPath().Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        var buildingPath = string.Empty;
+
+        foreach (var segment in segments)
+        {
+            if (buildingPath != string.Empty)
+                buildingPath += '\\';
+            
+            buildingPath += segment;
+            
+            if (await PathExistsAsync(buildingPath))
+                continue;
+            
+            status = FileStore.CreateFile(out _, out _, $@"{Settings.Paths.RemoteRootPath.SetSmbPathSeparators()}\{buildingPath}", AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_CREATE, CreateOptions.FILE_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+
+            if (status == NTStatus.STATUS_SUCCESS)
+                continue;
+            
+            Exceptions.Add($"Could not create directory `{buildingPath}`");
+            await CancellationTokenSource.CancelAsync();
+            break;
+        }
+    }
+    
+    private async ValueTask CopyFileAsync(FileObject sourceFo)
+    {
+        if (CancellationTokenSource.IsCancellationRequested)
+            return;
+        
+        var status = NTStatus.STATUS_SUCCESS;
+        
+        if (FileStore is null)
+        {
+            FileStore = Client.TreeConnect(Settings.ServerConnection.ShareName, out status);
+
+            if (status != NTStatus.STATUS_SUCCESS)
+            {
+                Exceptions.Add($"Could not connect to the file share `{Settings.ServerConnection.ShareName}`");
+                await CancellationTokenSource.CancelAsync();
+                return;
+            }
+        }
+
+        var remoteFilePath = $"{Settings.Paths.RemoteRootPath.SetSmbPathSeparators()}\\{sourceFo.FullPath.TrimPath().SetSmbPathSeparators()}";
+        var localFileStream = new FileStream(sourceFo.FullPath, FileMode.Open, FileAccess.Read);
+
+        status = FileStore.CreateFile(out var fileHandle, out _, remoteFilePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+        
+        if (status == NTStatus.STATUS_SUCCESS)
+        {
+            var writeOffset = 0;
+            
+            while (localFileStream.Position < localFileStream.Length)
+            {
+                var buffer = new byte[(int)Client.MaxWriteSize];
+                var bytesRead = localFileStream.Read(buffer, 0, buffer.Length);
+                
+                if (bytesRead < (int)Client.MaxWriteSize)
+                {
+                    Array.Resize(ref buffer, bytesRead);
+                }
+                int numberOfBytesWritten;
+                status = FileStore.WriteFile(out numberOfBytesWritten, fileHandle, writeOffset, buffer);
+
+                if (status != NTStatus.STATUS_SUCCESS)
+                {
+                    Exceptions.Add($"Failed to write file `{remoteFilePath}`");
+                    await CancellationTokenSource.CancelAsync();
+                    return;
+                }
+                
+                writeOffset += bytesRead;
+            }
+
+            status = FileStore.CloseFile(fileHandle);
+        }
+    }
+    
+    private async ValueTask CopyFileAsync(string sourcePath, string destinationPath)
+    {
+        if (CancellationTokenSource.IsCancellationRequested)
+            return;
+        
+        var status = NTStatus.STATUS_SUCCESS;
+        
+        if (FileStore is null)
+        {
+            FileStore = Client.TreeConnect(Settings.ServerConnection.ShareName, out status);
+
+            if (status != NTStatus.STATUS_SUCCESS)
+            {
+                Exceptions.Add($"Could not connect to the file share `{Settings.ServerConnection.ShareName}`");
+                await CancellationTokenSource.CancelAsync();
+                return;
+            }
+        }
+
+        var smbPath = destinationPath.TrimPath().SetSmbPathSeparators().TrimPath();
+        var relativePathWithoutFile = smbPath[..smbPath.LastIndexOf('\\')];
+
+        await EnsurePathExists(relativePathWithoutFile);
+
+        if (CancellationTokenSource.IsCancellationRequested)
+            return;
+
+        var remoteFilePath = $@"{Settings.Paths.RemoteRootPath.SetSmbPathSeparators()}\{smbPath}";
+        var localFileStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read);
+        var fileExists = await FileExistsAsync(smbPath);
+
+        status = FileStore.CreateFile(out var fileHandle, out _, remoteFilePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, fileExists ? CreateDisposition.FILE_OVERWRITE : CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+        
+        if (status == NTStatus.STATUS_SUCCESS)
+        {
+            var writeOffset = 0;
+            
+            while (localFileStream.Position < localFileStream.Length)
+            {
+                var buffer = new byte[(int)Client.MaxWriteSize];
+                var bytesRead = localFileStream.Read(buffer, 0, buffer.Length);
+                
+                if (bytesRead < (int)Client.MaxWriteSize)
+                {
+                    Array.Resize(ref buffer, bytesRead);
+                }
+                
+                status = FileStore.WriteFile(out _, fileHandle, writeOffset, buffer);
+
+                if (status != NTStatus.STATUS_SUCCESS)
+                {
+                    Exceptions.Add($"Failed to write file `{remoteFilePath}`");
+                    await CancellationTokenSource.CancelAsync();
+                    return;
+                }
+                
+                writeOffset += bytesRead;
+            }
+
+            status = FileStore.CloseFile(fileHandle);
+        }
+        else
+        {
+            Exceptions.Add($"Failed to create file `{remoteFilePath}`");
+            await CancellationTokenSource.CancelAsync();
         }
     }
 }
