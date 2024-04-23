@@ -872,7 +872,7 @@ public static class Strings
 
     public static string TrimPath(this string? path)
     {
-        return path?.Trim(Path.DirectorySeparatorChar) ?? string.Empty;
+        return path?.Trim('/').Trim('\\') ?? string.Empty;
     }
 
     public static string NormalizePath(this string path)
