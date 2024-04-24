@@ -20,4 +20,6 @@ public sealed class FileObject
             return _pathSegments ??= FilePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
         }
     }
+
+    public int Level => PathSegments.Length;
 }
