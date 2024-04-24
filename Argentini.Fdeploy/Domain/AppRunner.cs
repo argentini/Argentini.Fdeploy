@@ -226,7 +226,7 @@ public sealed class AppRunner
         
         await StorageRunner.RunDeploymentAsync();
         
-        StorageRunner.Disconnect();
+        Smb.Disconnect(StorageRunner.SmbConfig);
     }
     
     public async ValueTask<string> GetEmbeddedYamlPathAsync(CancellationTokenSource cancellationToken)

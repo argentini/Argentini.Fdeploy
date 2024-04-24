@@ -3,16 +3,12 @@ using SMBLibrary.Client;
 
 namespace Argentini.Fdeploy.Domain;
 
-public sealed class StorageRunner(Settings settings, List<string> exceptions, CancellationTokenSource cancellationTokenSource, string workingPath)
+public sealed class StorageRunner
 {
     #region App State Properties
     
-    public SMB2Client Client { get; } = new ();
-    public ISMBFileStore? FileStore { get; set; }
-    public Settings Settings { get; } = settings;
-    public List<string> Exceptions { get; } = exceptions;
-    public CancellationTokenSource CancellationTokenSource { get; } = cancellationTokenSource;
-    public string WorkingPath { get; } = workingPath;
+    public string WorkingPath { get; }
+    public SmbConfig SmbConfig { get; }
 
     #endregion
 
@@ -24,27 +20,42 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
     public List<FileObject> ServerFiles { get; } = [];
     
     #endregion
+
+    public StorageRunner(Settings settings, List<string> exceptions, CancellationTokenSource cancellationTokenSource, string workingPath)
+    {
+        WorkingPath = workingPath;
+        SmbConfig = new SmbConfig
+        {
+            CancellationTokenSource = cancellationTokenSource,
+            Client = new SMB2Client(),
+            Exceptions = exceptions,
+            Settings = settings
+        };
+    }
     
     public async ValueTask RunDeploymentAsync()
     {
         #region Connect to Server
 
-        await Spinner.StartAsync($"Connecting to {Settings.ServerConnection.ServerAddress}...", async spinner =>
+        await Spinner.StartAsync($"Connecting to {SmbConfig.Settings.ServerConnection.ServerAddress}...", spinner =>
         {
-            await this.ConnectAsync();
+            Smb.Connect(SmbConfig);
 
-            if (CancellationTokenSource.IsCancellationRequested)
+            if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
             {
-                spinner.Fail($"Connecting to {Settings.ServerConnection.ServerAddress}... Failed!");
-                this.Disconnect();
-                return;
+                spinner.Fail($"Connecting to {SmbConfig.Settings.ServerConnection.ServerAddress}... Failed!");
+                Smb.Disconnect(SmbConfig);
+            
+                return Task.CompletedTask;
             }
 
-            spinner.Text = $"Connecting to {Settings.ServerConnection.ServerAddress}... Success!";
-
+            spinner.Text = $"Connecting to {SmbConfig.Settings.ServerConnection.ServerAddress}... Success!";
+            
+            return Task.CompletedTask;
+            
         }, Patterns.Dots, Patterns.Line);
 
-        if (CancellationTokenSource.IsCancellationRequested)
+        if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
             return;
         
         #endregion
@@ -84,12 +95,12 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
 
         var sb = new StringBuilder();
 
-        await Spinner.StartAsync($"Publishing project {Settings.Project.ProjectFileName}...", async spinner =>
+        await Spinner.StartAsync($"Publishing project {SmbConfig.Settings.Project.ProjectFileName}...", async spinner =>
         {
             try
             {
                 var cmd = Cli.Wrap("dotnet")
-                    .WithArguments(new [] { "publish", "--framework", $"net{Settings.Project.TargetFramework:N1}", $"{WorkingPath}{Path.DirectorySeparatorChar}{Settings.Project.ProjectFilePath}", "-c", Settings.Project.BuildConfiguration, "-o", PublishPath, $"/p:EnvironmentName={Settings.Project.EnvironmentName}" })
+                    .WithArguments(new [] { "publish", "--framework", $"net{SmbConfig.Settings.Project.TargetFramework:N1}", $"{WorkingPath}{Path.DirectorySeparatorChar}{SmbConfig.Settings.Project.ProjectFilePath}", "-c", SmbConfig.Settings.Project.BuildConfiguration, "-o", PublishPath, $"/p:EnvironmentName={SmbConfig.Settings.Project.EnvironmentName}" })
                     .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
                     .WithStandardErrorPipe(PipeTarget.Null);
 		    
@@ -97,25 +108,25 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
 
                 if (result.IsSuccess == false)
                 {
-                    spinner.Fail($"Publishing project {Settings.Project.ProjectFileName}... Failed!");
-                    Exceptions.Add($"Could not publish the project; exit code: {result.ExitCode}");
-                    await CancellationTokenSource.CancelAsync();
+                    spinner.Fail($"Publishing project {SmbConfig.Settings.Project.ProjectFileName}... Failed!");
+                    SmbConfig.Exceptions.Add($"Could not publish the project; exit code: {result.ExitCode}");
+                    await SmbConfig.CancellationTokenSource.CancelAsync();
                     return;
                 }
 
-                spinner.Text = $"Published project {Settings.Project.ProjectFileName}... Success!";
+                spinner.Text = $"Published project {SmbConfig.Settings.Project.ProjectFileName}... Success!";
             }
 
             catch (Exception e)
             {
-                spinner.Fail($"Publishing project {Settings.Project.ProjectFileName}... Failed!");
-                Exceptions.Add($"Could not publish the project; {e.Message}");
-                await CancellationTokenSource.CancelAsync();
+                spinner.Fail($"Publishing project {SmbConfig.Settings.Project.ProjectFileName}... Failed!");
+                SmbConfig.Exceptions.Add($"Could not publish the project; {e.Message}");
+                await SmbConfig.CancellationTokenSource.CancelAsync();
             }
             
         }, Patterns.Dots, Patterns.Line);
 
-        if (CancellationTokenSource.IsCancellationRequested)
+        if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
             return;
         
         #endregion
@@ -126,37 +137,40 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
         {
             await RecurseLocalPathAsync(PublishPath);
 
-            if (CancellationTokenSource.IsCancellationRequested)
+            if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
                 spinner.Fail("Indexing local files... Failed!");
             else        
                 spinner.Text = $"Indexing local files... {LocalFiles.Count:N0} files... Success!";
             
         }, Patterns.Dots, Patterns.Line);
        
-        if (CancellationTokenSource.IsCancellationRequested)
+        if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
             return;
         
         #endregion
        
         #region Index Server Files
 
-        FileStore = await FileStore.EnsureFileStoreAsync(this);
+        await Smb.EnsureFileStoreAsync(SmbConfig);
             
-        if (FileStore is null)
+        if (SmbConfig.FileStore is null)
             return;
         
         await Spinner.StartAsync("Indexing server files...", async spinner =>
         {
-            await FileStore.RecurseSmbPathAsync(Settings.Paths.RemoteRootPath.NormalizeSmbPath(), 0, ServerFiles, spinner, "Indexing server files...", this);
+            SmbConfig.Files = ServerFiles;
+            SmbConfig.Spinner = spinner;
+            
+            await Smb.RecurseSmbPathAsync(SmbConfig, SmbConfig.Settings.Paths.RemoteRootPath.NormalizeSmbPath(), 0);
 
-            if (CancellationTokenSource.IsCancellationRequested)
+            if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
                 spinner.Fail("Indexing server files... Failed!");
             else
                 spinner.Text = $"Indexing server files... {ServerFiles.Count:N0} files... Success!";
 
         }, Patterns.Dots, Patterns.Line);
 
-        if (CancellationTokenSource.IsCancellationRequested)
+        if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
             return;
 
         #endregion
@@ -209,7 +223,7 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
             
             var trimmed = subdir.TrimPath().TrimStart(TrimmablePublishPath).TrimPath(); 
             
-            if (Settings.Paths.RelativeIgnorePaths.Contains(trimmed) || Settings.Paths.IgnoreFoldersNamed.Contains(subdir.GetLastPathSegment()))
+            if (SmbConfig.Settings.Paths.RelativeIgnorePaths.Contains(trimmed) || SmbConfig.Settings.Paths.IgnoreFoldersNamed.Contains(subdir.GetLastPathSegment()))
                 continue;
             
             await RecurseLocalPathAsync(subdir);
@@ -226,7 +240,7 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
                 
                 var trimmed = filePath.TrimPath().TrimStart(TrimmablePublishPath).TrimPath(); 
 
-                if (Settings.Paths.RelativeIgnoreFilePaths.Contains(trimmed) || Settings.Paths.IgnoreFilesNamed.Contains(file.Name))
+                if (SmbConfig.Settings.Paths.RelativeIgnoreFilePaths.Contains(trimmed) || SmbConfig.Settings.Paths.IgnoreFilesNamed.Contains(file.Name))
                     continue;
 
                 LocalFiles.Add(new FileObject
@@ -240,8 +254,8 @@ public sealed class StorageRunner(Settings settings, List<string> exceptions, Ca
             }
             catch
             {
-                Exceptions.Add($"Could process local file `{filePath}`");
-                await CancellationTokenSource.CancelAsync();
+                SmbConfig.Exceptions.Add($"Could process local file `{filePath}`");
+                await SmbConfig.CancellationTokenSource.CancelAsync();
             }
         }
     }
