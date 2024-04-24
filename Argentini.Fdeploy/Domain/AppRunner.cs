@@ -216,7 +216,7 @@ public sealed class AppRunner
         if (CancellationTokenSource.IsCancellationRequested)
             return;
         
-        AppOfflineMarkup = await File.ReadAllTextAsync(Path.Combine(await GetEmbeddedHtmlPathAsync(CancellationTokenSource), "app_offline.htm"), CancellationTokenSource.Token);
+        AppOfflineMarkup = await File.ReadAllTextAsync(Path.Combine(await GetEmbeddedHtmlPathAsync(CancellationTokenSource), "AppOffline.html"), CancellationTokenSource.Token);
         AppOfflineMarkup = AppOfflineMarkup.Replace("{{MetaTitle}}", Settings.Offline.MetaTitle);
         AppOfflineMarkup = AppOfflineMarkup.Replace("{{PageTitle}}", Settings.Offline.PageTitle);
         AppOfflineMarkup = AppOfflineMarkup.Replace("{{PageHtml}}", Settings.Offline.PageHtml);

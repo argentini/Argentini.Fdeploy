@@ -9,7 +9,7 @@ DeleteOrphans: true
 # Overwrite the existing root web.config file if it exists; default is true
 OverwriteWebConfig: true
 
-# Writes an app_offline.htm file to the server to take it offline for the deployment; default is true
+# Writes an AppOffline.html file to the server to take it offline for the deployment; default is true
 TakeServerOffline: true
 
 # Seconds to wait after taking the server offline; default is 10
