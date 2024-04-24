@@ -13,11 +13,4 @@
       <PackageReference Include="YamlDotNet" Version="15.1.2" />
     </ItemGroup>
 
-    <ItemGroup>
-      <None Remove="yaml\fdeploy.yml" />
-      <Resource Include="yaml\fdeploy.yml" />
-      <None Remove="html\app_offline.htm" />
-      <Resource Include="html\app_offline.htm" />
-    </ItemGroup>
-
 </Project>
