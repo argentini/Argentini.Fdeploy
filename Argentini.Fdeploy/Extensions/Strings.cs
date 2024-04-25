@@ -557,12 +557,6 @@ public static class Strings
 		if (string.IsNullOrEmpty(value))
 			return string.Empty;
 
-        if (value.IndexOf(Path.DirectorySeparatorChar) > -1)
-            return value;
-
-        if (value.IndexOf('/') < 0 && value.IndexOf('\\') < 0)
-            return value;
-        
 		if (Path.DirectorySeparatorChar == '/')
 			return value.Replace('\\', '/');
 
