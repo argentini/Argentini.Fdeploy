@@ -14,7 +14,8 @@ public sealed class SmbConfig
     public List<string> Exceptions { get; set; } = [];
     public CancellationTokenSource CancellationTokenSource { get; set; } = new();
     public Spinner? Spinner { get; set; }
-    public List<FileObject> Files { get; set; } = [];
+    public List<FileObject> ServerFiles { get; set; } = [];
+    public List<FileObject> LocalFiles { get; set; } = [];
 }
 
 public static class Smb
@@ -215,6 +216,16 @@ public static class Smb
                             if (smbConfig.Spinner is not null && level == 0)
                                 smbConfig.Spinner.Text = $"{smbConfig.Spinner.Text[..smbConfig.Spinner.Text.IndexOf("...", StringComparison.Ordinal)]}... {file.FileName}/...";
                             
+                            smbConfig.ServerFiles.Add(new FileObject
+                            {
+                                FullPath = filePath.Trim('\\'),
+                                FilePath = path.Trim('\\'),
+                                FileName = file.FileName,
+                                LastWriteTime = file.LastWriteTime.ToFileTimeUtc(),
+                                FileSizeBytes = 0,
+                                IsFolder = true
+                            });
+                            
                             await RecurseSmbPathAsync(smbConfig, filePath, level + 1);
                         }
 
@@ -223,13 +234,14 @@ public static class Smb
                             if (smbConfig.Settings.Paths.RelativeIgnoreFilePaths.Contains(filePath.NormalizePath().TrimStart(smbConfig.Settings.Paths.RemoteRootPath).TrimPath()) || smbConfig.Settings.Paths.IgnoreFilesNamed.Contains(file.FileName))
                                 continue;
 
-                            smbConfig.Files.Add(new FileObject
+                            smbConfig.ServerFiles.Add(new FileObject
                             {
                                 FullPath = filePath.Trim('\\'),
                                 FilePath = path.Trim('\\'),
                                 FileName = file.FileName,
                                 LastWriteTime = file.LastWriteTime.ToFileTimeUtc(),
-                                FileSizeBytes = file.Length
+                                FileSizeBytes = file.Length,
+                                IsFile = true
                             });
                         }
                     }
@@ -568,119 +580,31 @@ public static class Smb
         if (smbConfig.CancellationTokenSource.IsCancellationRequested)
             return;
 
-        // TODO: Index folder descendants
+        // Delete all files in the path
 
-        var files = new List<FileObject>();
-        
-        smbConfig.Files = files;
-            
-        await RecurseSmbPathAsync(smbConfig, smbFolderPath, 0, true);
-
-        // TODO: Delete all files in the path
-
-        foreach (var file in files)
+        foreach (var file in smbConfig.ServerFiles.ToList().Where(f => f.IsFile && f.FilePath == smbFolderPath))
+        {
             await DeleteServerFileAsync(smbConfig, file.FullPath);
 
+            smbConfig.ServerFiles.Remove(file);
+        }
+
         if (smbConfig.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        // TODO: Delete subfolders by level
+        // Delete subfolders by level
 
-        var folders = new List<FileObject>();
-        
-        smbConfig.Files = folders;
-            
-        await RecurseSmbPathFoldersAsync(smbConfig, smbFolderPath);
-        
-        foreach (var folder in folders.OrderByDescending(o => o.Level))
+        foreach (var folder in smbConfig.ServerFiles.ToList().Where(f => f.IsFolder && f.FilePath == smbFolderPath))
+        {
             await DeleteServerFolderAsync(smbConfig, folder.FullPath);
 
+            smbConfig.ServerFiles.Remove(folder);
+        }
+
         if (smbConfig.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        // TODO: Delete remaining empty folder
+        // Delete remaining empty folder
         await DeleteServerFolderAsync(smbConfig, smbFolderPath);
-        
-        if (smbConfig.CancellationTokenSource.IsCancellationRequested)
-            return;
-    }
-    
-    public static async ValueTask RecurseSmbPathFoldersAsync(SmbConfig smbConfig, string path)
-    {
-        if (smbConfig.CancellationTokenSource.IsCancellationRequested)
-            return;
-        
-        var status = NTStatus.STATUS_SUCCESS;
-        
-        if (smbConfig.FileStore is null)
-            return;
-
-        status = smbConfig.FileStore.CreateFile(out var directoryHandle, out _, path, AccessMask.GENERIC_READ, FileAttributes.Directory, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE, null);
-
-        if (status != NTStatus.STATUS_SUCCESS)
-        {
-            if (await FolderExistsAsync(smbConfig, path) == false)
-                return;
-        }
-
-        if (status == NTStatus.STATUS_SUCCESS)
-        {
-            status = smbConfig.FileStore.QueryDirectory(out var fileList, directoryHandle, "*", FileInformationClass.FileDirectoryInformation);
-            status = smbConfig.FileStore.CloseFile(directoryHandle);
-
-            if (status == NTStatus.STATUS_SUCCESS)
-            {
-                foreach (var item in fileList)
-                {
-                    if (smbConfig.CancellationTokenSource.IsCancellationRequested)
-                        break;
-                    
-                    FileDirectoryInformation? file = null;
-
-                    try
-                    {
-                        file = (FileDirectoryInformation)item;
-
-                        if (file.FileName is "." or "..")
-                            continue;
-
-                        var filePath = $"{path}\\{file.FileName}";
-                        var isDirectory = (file.FileAttributes & FileAttributes.Directory) == FileAttributes.Directory;
-
-                        if (isDirectory)
-                        {
-                            if (smbConfig.Settings.Paths.RelativeIgnorePaths.Contains(filePath.NormalizePath().TrimStart(smbConfig.Settings.Paths.RemoteRootPath).TrimPath()) || smbConfig.Settings.Paths.IgnoreFoldersNamed.Contains(file.FileName))
-                                continue;
-
-                            smbConfig.Files.Add(new FileObject
-                            {
-                                FullPath = filePath.Trim('\\'),
-                                FilePath = path.Trim('\\'),
-                                FileName = file.FileName,
-                                LastWriteTime = file.LastWriteTime.ToFileTimeUtc(),
-                                FileSizeBytes = 0
-                            });
-                            
-                            await RecurseSmbPathFoldersAsync(smbConfig, filePath);
-                        }
-                    }
-                    catch
-                    {
-                        smbConfig.Exceptions.Add($"Could process server folder `{(file is null ? item.ToString() : file.FileName)}`");
-                        await smbConfig.CancellationTokenSource.CancelAsync();
-                    }
-                }
-            }
-            else
-            {
-                smbConfig.Exceptions.Add($"Could not read the contents of server path `{path}`");
-                await smbConfig.CancellationTokenSource.CancelAsync();
-            }
-        }
-        else
-        {
-            smbConfig.Exceptions.Add($"Cannot write to server path `{path}`");
-            await smbConfig.CancellationTokenSource.CancelAsync();
-        }
     }
 }

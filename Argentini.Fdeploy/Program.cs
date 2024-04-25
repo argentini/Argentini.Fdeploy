@@ -8,14 +8,14 @@ internal class Program
 
         var runner = new AppRunner(args);
 
-        if (runner.CancellationTokenSource.IsCancellationRequested)
+        if (runner.SmbConfig.CancellationTokenSource.IsCancellationRequested)
         {
             await runner.OutputExceptionsAsync();
         }
 
         await runner.DeployAsync();
 
-        if (runner.CancellationTokenSource.IsCancellationRequested)
+        if (runner.SmbConfig.CancellationTokenSource.IsCancellationRequested)
         {
             await runner.OutputExceptionsAsync();
             await Console.Out.WriteLineAsync();
@@ -35,7 +35,7 @@ internal class Program
 
         await Console.Out.WriteLineAsync();
 
-        if (runner.CancellationTokenSource.IsCancellationRequested)
+        if (runner.SmbConfig.CancellationTokenSource.IsCancellationRequested)
             Environment.Exit(1);
         else
             Environment.Exit(0);

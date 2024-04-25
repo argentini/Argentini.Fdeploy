@@ -8,6 +8,8 @@ public sealed class FileObject
 
     public string FilePath { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;
+    public bool IsFile { get; set; }
+    public bool IsFolder { get; set; }
     
     private string[]? _pathSegments;
     public string[] PathSegments
