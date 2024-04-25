@@ -2,6 +2,7 @@ namespace Argentini.Fdeploy.Domain;
 
 public sealed class FileObject
 {
+    public Guid Id { get; set; } = Guid.NewGuid();
     public required string FullPath { get; set; } = string.Empty;
     public required long LastWriteTime { get; set; }
     public required long FileSizeBytes { get; set; }
