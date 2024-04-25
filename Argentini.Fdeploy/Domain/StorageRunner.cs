@@ -3,12 +3,22 @@ using SMBLibrary.Client;
 
 namespace Argentini.Fdeploy.Domain;
 
-public sealed class StorageRunner
+public sealed class StorageRunner(
+    Settings settings,
+    List<string> exceptions,
+    CancellationTokenSource cancellationTokenSource,
+    string workingPath)
 {
     #region App State Properties
     
-    public string WorkingPath { get; }
-    public SmbConfig SmbConfig { get; }
+    public string WorkingPath { get; } = workingPath;
+    public SmbConfig SmbConfig { get; } = new()
+    {
+        CancellationTokenSource = cancellationTokenSource,
+        Client = new SMB2Client(),
+        Exceptions = exceptions,
+        Settings = settings
+    };
 
     #endregion
 
@@ -21,18 +31,6 @@ public sealed class StorageRunner
     
     #endregion
 
-    public StorageRunner(Settings settings, List<string> exceptions, CancellationTokenSource cancellationTokenSource, string workingPath)
-    {
-        WorkingPath = workingPath;
-        SmbConfig = new SmbConfig
-        {
-            CancellationTokenSource = cancellationTokenSource,
-            Client = new SMB2Client(),
-            Exceptions = exceptions,
-            Settings = settings
-        };
-    }
-    
     public async ValueTask RunDeploymentAsync()
     {
         #region Connect to Server
@@ -60,32 +58,52 @@ public sealed class StorageRunner
         
         #endregion
 
-        // await Spinner.StartAsync("Test copy...", async spinner =>
-        // {
-        //     await CopyFileAsync("/Users/magic/Developer/Argentini.Fdeploy/clean.sh", $@"{Settings.Paths.RemoteRootPath}\wwwroot\xxxx\abc\clean.sh", spinner);
-        //     
-        //     if (CancellationTokenSource.IsCancellationRequested)
-        //         spinner.Fail("Test copy... Failed!");
-        //     else
-        //         spinner.Text = "Test copy... Success!";
-        //
-        // }, Patterns.Dots, Patterns.Line);
-        //
-        // if (CancellationTokenSource.IsCancellationRequested)
-        //     return;
-        //
+        await Spinner.StartAsync("Test copy...", async spinner =>
+        {
+            SmbConfig.Spinner = spinner;
+            
+            await Smb.CopyFileAsync(SmbConfig, "/Users/magic/Developer/Argentini.Fdeploy/clean.sh", $@"{SmbConfig.Settings.Paths.RemoteRootPath}\wwwroot\xxxx\abc\clean.sh");
+            
+            if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+                spinner.Fail("Test copy... Failed!");
+            else
+                spinner.Text = "Test copy... Success!";
+        
+        }, Patterns.Dots, Patterns.Line);
+        
+        if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+            return;
+
+        await Spinner.StartAsync("Test delete folder...", async spinner =>
+        {
+            SmbConfig.Spinner = spinner;
+
+            await Smb.DeleteServerFolderRecursiveAsync(SmbConfig, $@"{SmbConfig.Settings.Paths.RemoteRootPath}\wwwroot\xxxx");
+            
+            if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+                spinner.Fail("Test delete folder... Failed!");
+            else
+                spinner.Text = "Test delete folder... Success!";
+        
+        }, Patterns.Dots, Patterns.Line);
+        
+        if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+            return;
+
         // await Spinner.StartAsync("Test delete...", async spinner =>
         // {
-        //     await DeleteServerFileAsync($@"{Settings.Paths.RemoteRootPath}\wwwroot\xxxx\abc\clean.sh", spinner);
+        //     SmbConfig.Spinner = spinner;
+        //
+        //     await Smb.DeleteServerFileAsync(SmbConfig, $@"{SmbConfig.Settings.Paths.RemoteRootPath}\wwwroot\xxxx\abc\clean.sh");
         //     
-        //     if (CancellationTokenSource.IsCancellationRequested)
+        //     if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
         //         spinner.Fail("Test delete... Failed!");
         //     else
         //         spinner.Text = "Test delete... Success!";
         //
         // }, Patterns.Dots, Patterns.Line);
         //
-        // if (CancellationTokenSource.IsCancellationRequested)
+        // if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
         //     return;
         
         #region Publish Project

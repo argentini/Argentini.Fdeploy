@@ -161,7 +161,7 @@ public static class Smb
         await smbConfig.CancellationTokenSource.CancelAsync();
     }
 
-    public static async ValueTask RecurseSmbPathAsync(SmbConfig smbConfig, string path, int level)
+    public static async ValueTask RecurseSmbPathAsync(SmbConfig smbConfig, string path, int level, bool includeHidden = false)
     {
         if (smbConfig.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -202,7 +202,7 @@ public static class Smb
 
                         var filePath = $"{path}\\{file.FileName}";
 
-                        if ((file.FileAttributes & FileAttributes.Hidden) == FileAttributes.Hidden)
+                        if (includeHidden == false && (file.FileAttributes & FileAttributes.Hidden) == FileAttributes.Hidden)
                             continue;
                         
                         var isDirectory = (file.FileAttributes & FileAttributes.Directory) == FileAttributes.Directory;
@@ -348,67 +348,6 @@ public static class Smb
         }
     }
     
-    public static async ValueTask DeleteServerFileAsync(SmbConfig smbConfig, string serverFilePath)
-    {
-        if (smbConfig.CancellationTokenSource.IsCancellationRequested)
-            return;
-        
-        await EnsureFileStoreAsync(smbConfig);
-
-        if (smbConfig.FileStore is null)
-            return;
-
-        var smbFilePath = serverFilePath.NormalizeSmbPath();
-        var fileExists = await FileExistsAsync(smbConfig, smbFilePath);
-        
-        if (fileExists == false)
-            return;
-        
-        if (smbConfig.CancellationTokenSource.IsCancellationRequested)
-            return;
-
-        var success = true;
-        var retries = smbConfig.Settings.RetryCount > 0 ? smbConfig.Settings.RetryCount : 1;
-        
-        for (var attempt = 0; attempt < retries; attempt++)
-        {
-            var status = smbConfig.FileStore.CreateFile(out var fileHandle, out _, smbFilePath, AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
-
-            if (status == NTStatus.STATUS_SUCCESS)
-            {
-                var fileDispositionInformation = new FileDispositionInformation
-                {
-                    DeletePending = true
-                };
-                
-                status = smbConfig.FileStore.SetFileInformation(fileHandle, fileDispositionInformation);
-                success = status == NTStatus.STATUS_SUCCESS;
-                status = smbConfig.FileStore.CloseFile(fileHandle);                
-            }
-            else
-            {
-                success = false;
-            }
-
-            if (success)
-                break;
-
-            if (smbConfig.Spinner is not null)
-            {
-                var text = smbConfig.Spinner.Text.TrimEnd($" Retry {attempt}...");
-                smbConfig.Spinner.Text = $"{text} Retry {attempt + 1}...";
-            }
-
-            await Task.Delay(smbConfig.Settings.WriteRetryDelaySeconds * 1000);
-        }
-
-        if (success == false)
-        {
-            smbConfig.Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{smbFilePath}`");
-            await smbConfig.CancellationTokenSource.CancelAsync();
-        }
-    }
-    
     public static async ValueTask CopyFileAsync(SmbConfig smbConfig, string trimmablePublishPath, FileObject sourceFo)
     {
         if (smbConfig.CancellationTokenSource.IsCancellationRequested)
@@ -490,6 +429,257 @@ public static class Smb
         if (success == false)
         {
             smbConfig.Exceptions.Add($"Failed to write file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{smbFilePath}`");
+            await smbConfig.CancellationTokenSource.CancelAsync();
+        }
+    }
+    
+    public static async ValueTask DeleteServerFileAsync(SmbConfig smbConfig, string serverFilePath)
+    {
+        if (smbConfig.CancellationTokenSource.IsCancellationRequested)
+            return;
+        
+        await EnsureFileStoreAsync(smbConfig);
+
+        if (smbConfig.FileStore is null)
+            return;
+
+        var smbFilePath = serverFilePath.NormalizeSmbPath();
+        var success = true;
+        var retries = smbConfig.Settings.RetryCount > 0 ? smbConfig.Settings.RetryCount : 1;
+        
+        for (var attempt = 0; attempt < retries; attempt++)
+        {
+            var status = smbConfig.FileStore.CreateFile(out var fileHandle, out _, smbFilePath, AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+
+            if (status == NTStatus.STATUS_SUCCESS)
+            {
+                var fileDispositionInformation = new FileDispositionInformation
+                {
+                    DeletePending = true
+                };
+                
+                status = smbConfig.FileStore.SetFileInformation(fileHandle, fileDispositionInformation);
+                success = status == NTStatus.STATUS_SUCCESS;
+                status = smbConfig.FileStore.CloseFile(fileHandle);                
+            }
+            else
+            {
+                var fileExists = await FileExistsAsync(smbConfig, smbFilePath);
+        
+                if (fileExists == false)
+                    success = true;
+                else        
+                    success = false;
+            }
+
+            if (success)
+                break;
+
+            if (smbConfig.Spinner is not null)
+            {
+                var text = smbConfig.Spinner.Text.TrimEnd($" Retry {attempt}...");
+                smbConfig.Spinner.Text = $"{text} Retry {attempt + 1}...";
+            }
+
+            await Task.Delay(smbConfig.Settings.WriteRetryDelaySeconds * 1000);
+        }
+
+        if (success == false)
+        {
+            smbConfig.Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{smbFilePath}`");
+            await smbConfig.CancellationTokenSource.CancelAsync();
+        }
+    }
+
+    public static async ValueTask DeleteServerFolderAsync(SmbConfig smbConfig, string serverFolderPath)
+    {
+        if (smbConfig.CancellationTokenSource.IsCancellationRequested)
+            return;
+        
+        await EnsureFileStoreAsync(smbConfig);
+
+        if (smbConfig.FileStore is null)
+            return;
+
+        var smbFolderPath = serverFolderPath.NormalizeSmbPath();
+        var success = true;
+        var retries = smbConfig.Settings.RetryCount > 0 ? smbConfig.Settings.RetryCount : 1;
+        
+        for (var attempt = 0; attempt < retries; attempt++)
+        {
+            var status = smbConfig.FileStore.CreateFile(out var fileHandle, out _, smbFolderPath, AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+
+            if (status == NTStatus.STATUS_SUCCESS)
+            {
+                var fileDispositionInformation = new FileDispositionInformation
+                {
+                    DeletePending = true
+                };
+                
+                status = smbConfig.FileStore.SetFileInformation(fileHandle, fileDispositionInformation);
+                success = status == NTStatus.STATUS_SUCCESS;
+                status = smbConfig.FileStore.CloseFile(fileHandle);
+            }
+            else
+            {
+                var folderExists = await FolderExistsAsync(smbConfig, smbFolderPath);
+
+                if (folderExists == false)
+                    success = true;
+                else                
+                    success = false;
+            }
+
+            if (success)
+                break;
+
+            if (smbConfig.Spinner is not null)
+            {
+                var text = smbConfig.Spinner.Text.TrimEnd($" Retry {attempt}...");
+                smbConfig.Spinner.Text = $"{text} Retry {attempt + 1}...";
+            }
+
+            await Task.Delay(smbConfig.Settings.WriteRetryDelaySeconds * 1000);
+        }
+
+        if (success == false)
+        {
+            smbConfig.Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{smbFolderPath}`");
+            await smbConfig.CancellationTokenSource.CancelAsync();
+        }
+    }
+
+    public static async ValueTask DeleteServerFolderRecursiveAsync(SmbConfig smbConfig, string serverFolderPath)
+    {
+        if (smbConfig.CancellationTokenSource.IsCancellationRequested)
+            return;
+        
+        await EnsureFileStoreAsync(smbConfig);
+
+        if (smbConfig.FileStore is null)
+            return;
+
+        var smbFolderPath = serverFolderPath.NormalizeSmbPath();
+        var folderExists = await FolderExistsAsync(smbConfig, smbFolderPath);
+        
+        if (folderExists == false)
+            return;
+        
+        if (smbConfig.CancellationTokenSource.IsCancellationRequested)
+            return;
+
+        // TODO: Index folder descendants
+
+        var files = new List<FileObject>();
+        
+        smbConfig.Files = files;
+            
+        await RecurseSmbPathAsync(smbConfig, smbFolderPath, 0, true);
+
+        // TODO: Delete all files in the path
+
+        foreach (var file in files)
+            await DeleteServerFileAsync(smbConfig, file.FullPath);
+
+        if (smbConfig.CancellationTokenSource.IsCancellationRequested)
+            return;
+        
+        // TODO: Delete subfolders by level
+
+        var folders = new List<FileObject>();
+        
+        smbConfig.Files = folders;
+            
+        await RecurseSmbPathFoldersAsync(smbConfig, smbFolderPath);
+        
+        foreach (var folder in folders.OrderByDescending(o => o.Level))
+            await DeleteServerFolderAsync(smbConfig, folder.FullPath);
+
+        if (smbConfig.CancellationTokenSource.IsCancellationRequested)
+            return;
+        
+        // TODO: Delete remaining empty folder
+        await DeleteServerFolderAsync(smbConfig, smbFolderPath);
+        
+        if (smbConfig.CancellationTokenSource.IsCancellationRequested)
+            return;
+    }
+    
+    public static async ValueTask RecurseSmbPathFoldersAsync(SmbConfig smbConfig, string path)
+    {
+        if (smbConfig.CancellationTokenSource.IsCancellationRequested)
+            return;
+        
+        var status = NTStatus.STATUS_SUCCESS;
+        
+        if (smbConfig.FileStore is null)
+            return;
+
+        status = smbConfig.FileStore.CreateFile(out var directoryHandle, out _, path, AccessMask.GENERIC_READ, FileAttributes.Directory, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE, null);
+
+        if (status != NTStatus.STATUS_SUCCESS)
+        {
+            if (await FolderExistsAsync(smbConfig, path) == false)
+                return;
+        }
+
+        if (status == NTStatus.STATUS_SUCCESS)
+        {
+            status = smbConfig.FileStore.QueryDirectory(out var fileList, directoryHandle, "*", FileInformationClass.FileDirectoryInformation);
+            status = smbConfig.FileStore.CloseFile(directoryHandle);
+
+            if (status == NTStatus.STATUS_SUCCESS)
+            {
+                foreach (var item in fileList)
+                {
+                    if (smbConfig.CancellationTokenSource.IsCancellationRequested)
+                        break;
+                    
+                    FileDirectoryInformation? file = null;
+
+                    try
+                    {
+                        file = (FileDirectoryInformation)item;
+
+                        if (file.FileName is "." or "..")
+                            continue;
+
+                        var filePath = $"{path}\\{file.FileName}";
+                        var isDirectory = (file.FileAttributes & FileAttributes.Directory) == FileAttributes.Directory;
+
+                        if (isDirectory)
+                        {
+                            if (smbConfig.Settings.Paths.RelativeIgnorePaths.Contains(filePath.NormalizePath().TrimStart(smbConfig.Settings.Paths.RemoteRootPath).TrimPath()) || smbConfig.Settings.Paths.IgnoreFoldersNamed.Contains(file.FileName))
+                                continue;
+
+                            smbConfig.Files.Add(new FileObject
+                            {
+                                FullPath = filePath.Trim('\\'),
+                                FilePath = path.Trim('\\'),
+                                FileName = file.FileName,
+                                LastWriteTime = file.LastWriteTime.ToFileTimeUtc(),
+                                FileSizeBytes = 0
+                            });
+                            
+                            await RecurseSmbPathFoldersAsync(smbConfig, filePath);
+                        }
+                    }
+                    catch
+                    {
+                        smbConfig.Exceptions.Add($"Could process server folder `{(file is null ? item.ToString() : file.FileName)}`");
+                        await smbConfig.CancellationTokenSource.CancelAsync();
+                    }
+                }
+            }
+            else
+            {
+                smbConfig.Exceptions.Add($"Could not read the contents of server path `{path}`");
+                await smbConfig.CancellationTokenSource.CancelAsync();
+            }
+        }
+        else
+        {
+            smbConfig.Exceptions.Add($"Cannot write to server path `{path}`");
             await smbConfig.CancellationTokenSource.CancelAsync();
         }
     }
