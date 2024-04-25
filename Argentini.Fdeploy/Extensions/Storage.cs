@@ -6,6 +6,8 @@ namespace Argentini.Fdeploy.Extensions;
 
 public static class Storage
 {
+    #region Local Storage
+    
     public static async ValueTask RecurseLocalPathAsync(AppState appState, string path)
     {
         foreach (var subdir in Directory.GetDirectories(path))
@@ -15,22 +17,12 @@ public static class Storage
             if ((directory.Attributes & System.IO.FileAttributes.Hidden) == System.IO.FileAttributes.Hidden)
                 continue;
             
-            var relativeComparablePath = subdir.NormalizePath().TrimStart(appState.PublishPath.TrimPath()).TrimPath();
-            var segmentName = subdir.GetLastPathSegment().TrimPath();
+            var fo = new LocalFileObject(subdir, directory.LastWriteTime.ToFileTimeUtc(), 0, false, appState.PublishPath);
             
-            if (FolderPathShouldBeIgnoredDuringScan(appState, relativeComparablePath, segmentName))
+            if (FolderPathShouldBeIgnoredDuringScan(appState, fo))
                 continue;
 
-            appState.LocalFiles.Add(new FileObject
-            {
-                FullPath = subdir,
-                FilePath = subdir.TrimPath().TrimEnd(subdir.GetLastPathSegment()).TrimPath(),
-                FileName = segmentName,
-                LastWriteTime = directory.LastWriteTime.ToFileTimeUtc(),
-                FileSizeBytes = 0,
-                RelativeComparablePath = relativeComparablePath,
-                IsFolder = true
-            });
+            appState.LocalFiles.Add(fo);
 
             await RecurseLocalPathAsync(appState, subdir);
         }
@@ -44,21 +36,12 @@ public static class Storage
                 if ((file.Attributes & System.IO.FileAttributes.Hidden) == System.IO.FileAttributes.Hidden)
                     continue;
 
-                var relativeComparablePath = filePath.NormalizePath().TrimStart(appState.PublishPath.TrimPath()).TrimPath();
+                var fo = new LocalFileObject(filePath, file.LastWriteTime.ToFileTimeUtc(), file.Length, true, appState.PublishPath);
             
-                if (FilePathShouldBeIgnoredDuringScan(appState, relativeComparablePath, file.Name))
+                if (FilePathShouldBeIgnoredDuringScan(appState, fo))
                     continue;
                 
-                appState.LocalFiles.Add(new FileObject
-                {
-                    FullPath = filePath,
-                    FilePath = file.DirectoryName.TrimPath(),
-                    FileName = file.Name,
-                    LastWriteTime = file.LastWriteTime.ToFileTimeUtc(),
-                    FileSizeBytes = file.Length,
-                    RelativeComparablePath = relativeComparablePath,
-                    IsFile = true
-                });
+                appState.LocalFiles.Add(fo);
             }
             catch
             {
@@ -68,6 +51,40 @@ public static class Storage
         }
     }
 
+    #endregion
+    
+    #region Ignore Rules
+    
+    public static bool FolderPathShouldBeIgnoredDuringScan(AppState appState, FileObject fo)
+    {
+        foreach (var ignorePath in appState.Settings.Paths.RelativeIgnorePaths)
+        {
+            if (fo.RelativeComparablePath != ignorePath)
+                continue;
+
+            return true;
+        }
+
+        return appState.Settings.Paths.IgnoreFoldersNamed.Contains(fo.FileNameOrPathSegment);
+    }
+
+    public static bool FilePathShouldBeIgnoredDuringScan(AppState appState, FileObject fo)
+    {
+        foreach (var ignorePath in appState.Settings.Paths.RelativeIgnoreFilePaths)
+        {
+            if (fo.RelativeComparablePath != ignorePath)
+                continue;
+
+            return true;
+        }
+
+        return appState.Settings.Paths.IgnoreFilesNamed.Contains(fo.FileNameOrPathSegment);
+    }
+    
+    #endregion
+    
+    #region SMB
+    
     public static void Connect(AppState appState)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
@@ -209,34 +226,12 @@ public static class Storage
         appState.Exceptions.Add($"Could not connect to the file share `{appState.Settings.ServerConnection.ShareName}`");
         await appState.CancellationTokenSource.CancelAsync();
     }
-
-    public static bool FolderPathShouldBeIgnoredDuringScan(AppState appState, string path, string segmentName)
-    {
-        foreach (var ignorePath in appState.Settings.Paths.RelativeIgnorePaths)
-        {
-            if (path != ignorePath)
-                continue;
-
-            return true;
-        }
-
-        return appState.Settings.Paths.IgnoreFoldersNamed.Contains(segmentName);
-    }
-
-    public static bool FilePathShouldBeIgnoredDuringScan(AppState appState, string path, string segmentName)
-    {
-        foreach (var ignorePath in appState.Settings.Paths.RelativeIgnoreFilePaths)
-        {
-            if (path != ignorePath)
-                continue;
-
-            return true;
-        }
-
-        return appState.Settings.Paths.IgnoreFilesNamed.Contains(segmentName);
-    }
-
-    public static async ValueTask RecurseSmbPathAsync(AppState appState, string path, bool includeHidden = false)
+    
+    #endregion
+    
+    #region Server Storage
+    
+    public static async ValueTask RecurseServerPathAsync(AppState appState, string path, bool includeHidden = false)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -250,7 +245,7 @@ public static class Storage
 
         if (status != NTStatus.STATUS_SUCCESS)
         {
-            if (await FolderExistsAsync(appState, path) == false)
+            if (await ServerFolderExistsAsync(appState, path) == false)
                 return;
         }
 
@@ -276,7 +271,6 @@ public static class Storage
                             continue;
 
                         var filePath = $"{path}\\{file.FileName}";
-                        var relativeComparablePath = filePath.TrimStart(appState.Settings.Paths.RemoteRootPath.NormalizeSmbPath()).TrimPath().SetNativePathSeparators();
 
                         if (includeHidden == false && (file.FileAttributes & FileAttributes.Hidden) == FileAttributes.Hidden)
                             continue;
@@ -285,41 +279,27 @@ public static class Storage
                         
                         if (isDirectory)
                         {
-                            if (FolderPathShouldBeIgnoredDuringScan(appState, relativeComparablePath, file.FileName))
-                                continue;
-                            
                             if (appState.CurrentSpinner is not null)
                                 appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.Text[..appState.CurrentSpinner.Text.IndexOf("...", StringComparison.Ordinal)]}... {file.FileName}/...";
+
+                            var fo = new ServerFileObject(filePath.Trim('\\'), file.LastWriteTime.ToFileTimeUtc(), 0, false, appState.Settings.Paths.RemoteRootPath);
+                                
+                            if (FolderPathShouldBeIgnoredDuringScan(appState, fo))
+                                continue;
                             
-                            appState.ServerFiles.Add(new FileObject
-                            {
-                                FullPath = filePath.Trim('\\'),
-                                FilePath = path.Trim('\\'),
-                                FileName = file.FileName,
-                                LastWriteTime = file.LastWriteTime.ToFileTimeUtc(),
-                                FileSizeBytes = 0,
-                                RelativeComparablePath = relativeComparablePath,
-                                IsFolder = true
-                            });
+                            appState.ServerFiles.Add(fo);
                             
-                            await RecurseSmbPathAsync(appState, filePath);
+                            await RecurseServerPathAsync(appState, filePath);
                         }
 
                         else
                         {
-                            if (FilePathShouldBeIgnoredDuringScan(appState, relativeComparablePath, file.FileName))
+                            var fo = new ServerFileObject(filePath.Trim('\\'), file.LastWriteTime.ToFileTimeUtc(), file.Length, true, appState.Settings.Paths.RemoteRootPath);
+
+                            if (FilePathShouldBeIgnoredDuringScan(appState, fo))
                                 continue;
 
-                            appState.ServerFiles.Add(new FileObject
-                            {
-                                FullPath = filePath.Trim('\\'),
-                                FilePath = path.Trim('\\'),
-                                FileName = file.FileName,
-                                LastWriteTime = file.LastWriteTime.ToFileTimeUtc(),
-                                FileSizeBytes = file.Length,
-                                RelativeComparablePath = relativeComparablePath,
-                                IsFile = true
-                            });
+                            appState.ServerFiles.Add(fo);
                         }
                     }
                     catch
@@ -342,7 +322,7 @@ public static class Storage
         }
     }
     
-    public static async ValueTask<bool> FileExistsAsync(AppState appState, string filePath)
+    public static async ValueTask<bool> ServerFileExistsAsync(AppState appState, string filePath)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return false;
@@ -360,7 +340,7 @@ public static class Storage
         return status == NTStatus.STATUS_SUCCESS;
     }
     
-    public static async ValueTask<bool> FolderExistsAsync(AppState appState, string destinationPath)
+    public static async ValueTask<bool> ServerFolderExistsAsync(AppState appState, string destinationPath)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return false;
@@ -378,7 +358,7 @@ public static class Storage
         return status == NTStatus.STATUS_SUCCESS;
     }
 
-    public static async ValueTask EnsurePathExists(AppState appState, string destinationPath)
+    public static async ValueTask EnsureServerPathExists(AppState appState, string destinationPath)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -388,7 +368,7 @@ public static class Storage
         if (appState.FileStore is null)
             return;
 
-        if (await FolderExistsAsync(appState, destinationPath))
+        if (await ServerFolderExistsAsync(appState, destinationPath))
             return;
 
         var segments = destinationPath.NormalizeSmbPath().Split('\\', StringSplitOptions.RemoveEmptyEntries);
@@ -401,7 +381,7 @@ public static class Storage
             
             buildingPath += segment;
             
-            if (await FolderExistsAsync(appState, buildingPath))
+            if (await ServerFolderExistsAsync(appState, buildingPath))
                 continue;
             
             var success = true;
@@ -437,12 +417,174 @@ public static class Storage
         }
     }
     
+    public static async ValueTask DeleteServerFileAsync(AppState appState, FileObject sfo)
+    {
+        if (appState.CancellationTokenSource.IsCancellationRequested)
+            return;
+        
+        await EnsureFileStoreAsync(appState);
+
+        if (appState.FileStore is null)
+            return;
+
+        var success = true;
+        var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
+        
+        for (var attempt = 0; attempt < retries; attempt++)
+        {
+            var status = appState.FileStore.CreateFile(out var fileHandle, out _, sfo.AbsolutePath.TrimPath(), AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+
+            if (status == NTStatus.STATUS_SUCCESS)
+            {
+                var fileDispositionInformation = new FileDispositionInformation
+                {
+                    DeletePending = true
+                };
+                
+                status = appState.FileStore.SetFileInformation(fileHandle, fileDispositionInformation);
+                success = status == NTStatus.STATUS_SUCCESS;
+                status = appState.FileStore.CloseFile(fileHandle);                
+            }
+            else
+            {
+                var fileExists = await ServerFileExistsAsync(appState, sfo.AbsolutePath.TrimPath());
+        
+                if (fileExists == false)
+                    success = true;
+                else        
+                    success = false;
+            }
+
+            if (success)
+                break;
+
+            if (appState.CurrentSpinner is not null)
+            {
+                var text = appState.CurrentSpinner.Text;
+
+                if (text.Contains("... Retry", StringComparison.Ordinal))
+                    text = appState.CurrentSpinner.Text[..text.IndexOf("... Retry", StringComparison.Ordinal)] + "...";
+
+                appState.CurrentSpinner.Text = $"{text} Retry {attempt + 1} ({sfo.FileNameOrPathSegment})...";
+            }
+
+            await Task.Delay(appState.Settings.WriteRetryDelaySeconds * 1000);
+        }
+
+        if (success == false)
+        {
+            appState.Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{sfo.AbsolutePath}`");
+            await appState.CancellationTokenSource.CancelAsync();
+        }
+    }
+
+    public static async ValueTask DeleteServerFolderAsync(AppState appState, FileObject sfo)
+    {
+        if (appState.CancellationTokenSource.IsCancellationRequested)
+            return;
+        
+        await EnsureFileStoreAsync(appState);
+
+        if (appState.FileStore is null)
+            return;
+
+        var success = true;
+        var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
+        
+        for (var attempt = 0; attempt < retries; attempt++)
+        {
+            var status = appState.FileStore.CreateFile(out var fileHandle, out _, sfo.AbsolutePath.TrimPath(), AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+
+            if (status == NTStatus.STATUS_SUCCESS)
+            {
+                var fileDispositionInformation = new FileDispositionInformation
+                {
+                    DeletePending = true
+                };
+                
+                status = appState.FileStore.SetFileInformation(fileHandle, fileDispositionInformation);
+                success = status == NTStatus.STATUS_SUCCESS;
+                status = appState.FileStore.CloseFile(fileHandle);
+            }
+            else
+            {
+                var folderExists = await ServerFolderExistsAsync(appState, sfo.AbsolutePath.TrimPath());
+
+                if (folderExists == false)
+                    success = true;
+                else                
+                    success = false;
+            }
+
+            if (success)
+                break;
+
+            if (appState.CurrentSpinner is not null)
+            {
+                var text = appState.CurrentSpinner.Text;
+
+                if (text.Contains("... Retry", StringComparison.Ordinal))
+                    text = appState.CurrentSpinner.Text[..text.IndexOf("... Retry", StringComparison.Ordinal)] + "...";
+                
+                appState.CurrentSpinner.Text = $"{text} Retry {attempt + 1} ({sfo.FileNameOrPathSegment}/)...";
+            }
+
+            await Task.Delay(appState.Settings.WriteRetryDelaySeconds * 1000);
+        }
+
+        if (success == false)
+        {
+            appState.Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{sfo.AbsolutePath}`");
+            await appState.CancellationTokenSource.CancelAsync();
+        }
+    }
+
+    public static async ValueTask DeleteServerFolderRecursiveAsync(AppState appState, FileObject sfo)
+    {
+        if (appState.CancellationTokenSource.IsCancellationRequested)
+            return;
+        
+        await EnsureFileStoreAsync(appState);
+
+        if (appState.FileStore is null)
+            return;
+
+        var folderExists = await ServerFolderExistsAsync(appState, sfo.AbsolutePath.TrimPath());
+        
+        if (folderExists == false)
+            return;
+        
+        if (appState.CancellationTokenSource.IsCancellationRequested)
+            return;
+
+        // Delete all files in the path
+
+        foreach (var file in appState.ServerFiles.ToList().Where(f => f.IsFile && f.AbsolutePath.StartsWith(sfo.AbsolutePath)))
+        {
+            await DeleteServerFileAsync(appState, file);
+
+            appState.ServerFiles.Remove(file);
+        }
+
+        if (appState.CancellationTokenSource.IsCancellationRequested)
+            return;
+        
+        // Delete subfolders by level
+
+        foreach (var folder in appState.ServerFiles.ToList().Where(f => f.IsFolder && f.AbsolutePath.StartsWith(sfo.AbsolutePath)).OrderByDescending(o => o.Level))
+        {
+            await DeleteServerFolderAsync(appState, folder);
+
+            appState.ServerFiles.Remove(folder);
+        }
+    }
+    
     public static async ValueTask CopyFileAsync(AppState appState, string trimmablePublishPath, FileObject sourceFo)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
-        var relativePathWithFile = sourceFo.FullPath.TrimPath().TrimStart(trimmablePublishPath).TrimPath();
+        var relativePathWithFile = sourceFo.AbsolutePath.TrimPath().TrimStart(trimmablePublishPath).TrimPath();
         
         await CopyFileAsync(appState, relativePathWithFile, relativePathWithFile);
     }
@@ -460,7 +602,7 @@ public static class Storage
         var smbFilePath = destinationFilePath.NormalizeSmbPath();
         var destinationPathWithoutFile = smbFilePath[..smbFilePath.LastIndexOf('\\')];
 
-        await EnsurePathExists(appState, destinationPathWithoutFile);
+        await EnsureServerPathExists(appState, destinationPathWithoutFile);
 
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -471,7 +613,7 @@ public static class Storage
         
         for (var attempt = 0; attempt < retries; attempt++)
         {
-            var fileExists = await FileExistsAsync(appState, smbFilePath);
+            var fileExists = await ServerFileExistsAsync(appState, smbFilePath);
             var status = appState.FileStore.CreateFile(out var fileHandle, out _, smbFilePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, fileExists ? CreateDisposition.FILE_OVERWRITE : CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
             
             if (status == NTStatus.STATUS_SUCCESS)
@@ -522,168 +664,5 @@ public static class Storage
         }
     }
     
-    public static async ValueTask DeleteServerFileAsync(AppState appState, string serverFilePath)
-    {
-        if (appState.CancellationTokenSource.IsCancellationRequested)
-            return;
-        
-        await EnsureFileStoreAsync(appState);
-
-        if (appState.FileStore is null)
-            return;
-
-        var smbFilePath = serverFilePath.NormalizeSmbPath();
-        var success = true;
-        var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
-        
-        for (var attempt = 0; attempt < retries; attempt++)
-        {
-            var status = appState.FileStore.CreateFile(out var fileHandle, out _, smbFilePath, AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
-
-            if (status == NTStatus.STATUS_SUCCESS)
-            {
-                var fileDispositionInformation = new FileDispositionInformation
-                {
-                    DeletePending = true
-                };
-                
-                status = appState.FileStore.SetFileInformation(fileHandle, fileDispositionInformation);
-                success = status == NTStatus.STATUS_SUCCESS;
-                status = appState.FileStore.CloseFile(fileHandle);                
-            }
-            else
-            {
-                var fileExists = await FileExistsAsync(appState, smbFilePath);
-        
-                if (fileExists == false)
-                    success = true;
-                else        
-                    success = false;
-            }
-
-            if (success)
-                break;
-
-            if (appState.CurrentSpinner is not null)
-            {
-                var text = appState.CurrentSpinner.Text;
-
-                if (text.Contains("... Retry", StringComparison.Ordinal))
-                    text = appState.CurrentSpinner.Text[..text.IndexOf("... Retry", StringComparison.Ordinal)] + "...";
-
-                appState.CurrentSpinner.Text = $"{text} Retry {attempt + 1} ({smbFilePath.GetLastPathSegment()})...";
-            }
-
-            await Task.Delay(appState.Settings.WriteRetryDelaySeconds * 1000);
-        }
-
-        if (success == false)
-        {
-            appState.Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{smbFilePath}`");
-            await appState.CancellationTokenSource.CancelAsync();
-        }
-    }
-
-    public static async ValueTask DeleteServerFolderAsync(AppState appState, string serverFolderPath)
-    {
-        if (appState.CancellationTokenSource.IsCancellationRequested)
-            return;
-        
-        await EnsureFileStoreAsync(appState);
-
-        if (appState.FileStore is null)
-            return;
-
-        var smbFolderPath = serverFolderPath.NormalizeSmbPath();
-        var success = true;
-        var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
-        
-        for (var attempt = 0; attempt < retries; attempt++)
-        {
-            var status = appState.FileStore.CreateFile(out var fileHandle, out _, smbFolderPath, AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
-
-            if (status == NTStatus.STATUS_SUCCESS)
-            {
-                var fileDispositionInformation = new FileDispositionInformation
-                {
-                    DeletePending = true
-                };
-                
-                status = appState.FileStore.SetFileInformation(fileHandle, fileDispositionInformation);
-                success = status == NTStatus.STATUS_SUCCESS;
-                status = appState.FileStore.CloseFile(fileHandle);
-            }
-            else
-            {
-                var folderExists = await FolderExistsAsync(appState, smbFolderPath);
-
-                if (folderExists == false)
-                    success = true;
-                else                
-                    success = false;
-            }
-
-            if (success)
-                break;
-
-            if (appState.CurrentSpinner is not null)
-            {
-                var text = appState.CurrentSpinner.Text;
-
-                if (text.Contains("... Retry", StringComparison.Ordinal))
-                    text = appState.CurrentSpinner.Text[..text.IndexOf("... Retry", StringComparison.Ordinal)] + "...";
-                
-                appState.CurrentSpinner.Text = $"{text} Retry {attempt + 1} ({smbFolderPath.GetLastPathSegment()}/)...";
-            }
-
-            await Task.Delay(appState.Settings.WriteRetryDelaySeconds * 1000);
-        }
-
-        if (success == false)
-        {
-            appState.Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{smbFolderPath}`");
-            await appState.CancellationTokenSource.CancelAsync();
-        }
-    }
-
-    public static async ValueTask DeleteServerFolderRecursiveAsync(AppState appState, string serverFolderPath)
-    {
-        if (appState.CancellationTokenSource.IsCancellationRequested)
-            return;
-        
-        await EnsureFileStoreAsync(appState);
-
-        if (appState.FileStore is null)
-            return;
-
-        var smbFolderPath = serverFolderPath.NormalizeSmbPath();
-        var folderExists = await FolderExistsAsync(appState, smbFolderPath);
-        
-        if (folderExists == false)
-            return;
-        
-        if (appState.CancellationTokenSource.IsCancellationRequested)
-            return;
-
-        // Delete all files in the path
-
-        foreach (var file in appState.ServerFiles.ToList().Where(f => f.IsFile && f.FullPath.StartsWith(smbFolderPath)))
-        {
-            await DeleteServerFileAsync(appState, file.FullPath);
-
-            appState.ServerFiles.Remove(file);
-        }
-
-        if (appState.CancellationTokenSource.IsCancellationRequested)
-            return;
-        
-        // Delete subfolders by level
-
-        foreach (var folder in appState.ServerFiles.ToList().Where(f => f.IsFolder && f.FullPath.StartsWith(smbFolderPath)).OrderByDescending(o => o.Level))
-        {
-            await DeleteServerFolderAsync(appState, folder.FullPath);
-
-            appState.ServerFiles.Remove(folder);
-        }
-    }
+    #endregion
 }

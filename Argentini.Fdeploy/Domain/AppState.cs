@@ -17,7 +17,7 @@ public sealed class AppState
     public List<string> Exceptions { get; set; } = [];
     public CancellationTokenSource CancellationTokenSource { get; set; } = new();
     public Spinner? CurrentSpinner { get; set; }
-    public List<FileObject> ServerFiles { get; set; } = [];
-    public List<FileObject> LocalFiles { get; set; } = [];
+    public List<ServerFileObject> ServerFiles { get; set; } = [];
+    public List<LocalFileObject> LocalFiles { get; set; } = [];
     
 }

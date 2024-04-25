@@ -478,7 +478,7 @@ public sealed class AppRunner
         {
             AppState.CurrentSpinner = spinner;
             
-            await Storage.RecurseSmbPathAsync(AppState, AppState.Settings.Paths.RemoteRootPath.NormalizeSmbPath());
+            await Storage.RecurseServerPathAsync(AppState, AppState.Settings.Paths.RemoteRootPath.NormalizeSmbPath());
 
             // Remove paths that enclose ignore paths
             foreach (var folder in AppState.ServerFiles.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
@@ -528,9 +528,9 @@ public sealed class AppRunner
                 foreach (var item in itemsToDelete)
                 {
                     if (item.IsFile)
-                        await Storage.DeleteServerFileAsync(AppState, item.FullPath);
+                        await Storage.DeleteServerFileAsync(AppState, item);
                     else
-                        await Storage.DeleteServerFolderRecursiveAsync(AppState, item.FullPath);
+                        await Storage.DeleteServerFolderRecursiveAsync(AppState, item);
 
                     if (AppState.CancellationTokenSource.IsCancellationRequested)
                         break;
