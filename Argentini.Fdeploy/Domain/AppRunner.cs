@@ -480,6 +480,18 @@ public sealed class AppRunner
             
             await Storage.RecurseSmbPathAsync(AppState, AppState.Settings.Paths.RemoteRootPath.NormalizeSmbPath());
 
+            // Remove paths that enclose ignore paths
+            foreach (var folder in AppState.ServerFiles.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
+            {
+                foreach (var ignorePath in AppState.Settings.Paths.RelativeIgnorePaths)
+                {
+                    if (ignorePath.StartsWith(folder.RelativeComparablePath) == false)
+                        continue;
+                    
+                    AppState.ServerFiles.Remove(folder);
+                }
+            }
+            
             if (AppState.CancellationTokenSource.IsCancellationRequested)
                 spinner.Fail("Indexing server files... Failed!");
             else
@@ -498,13 +510,13 @@ public sealed class AppRunner
         {
             var itemsToDelete = AppState.ServerFiles.Except(AppState.LocalFiles, new FileObjectComparer()).ToList();
 
-            // If deleting a folder, remove all descendants from lists
-            foreach (var folder in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
+            // Remove descendants of folders to be deleted
+            foreach (var item in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
             {
-                foreach (var item in itemsToDelete.ToList().Where(f => f.Id != folder.Id && f.RelativeComparablePath.StartsWith(folder.RelativeComparablePath)))
+                foreach (var subitem in itemsToDelete.ToList().OrderByDescending(o => o.Level))
                 {
-                    itemsToDelete.Remove(item);
-                    AppState.ServerFiles.Remove(item);
+                    if (subitem.Level > item.Level && subitem.RelativeComparablePath.StartsWith(item.RelativeComparablePath))
+                        itemsToDelete.Remove(subitem);
                 }
             }
 
@@ -517,12 +529,7 @@ public sealed class AppRunner
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
                     return;
-                
-                AppState.ServerFiles.Remove(item);
             }
-            
-            if (AppState.CancellationTokenSource.IsCancellationRequested)
-                return;
         }
         
         #endregion

@@ -18,7 +18,7 @@ public static class Storage
             var relativeComparablePath = subdir.NormalizePath().TrimStart(appState.PublishPath.TrimPath()).TrimPath();
             var segmentName = subdir.GetLastPathSegment().TrimPath();
             
-            if (FolderPathShouldBeIgnored(appState, relativeComparablePath, segmentName))
+            if (FolderPathShouldBeIgnoredDuringScan(appState, relativeComparablePath, segmentName))
                 continue;
 
             appState.LocalFiles.Add(new FileObject
@@ -46,7 +46,7 @@ public static class Storage
 
                 var relativeComparablePath = filePath.NormalizePath().TrimStart(appState.PublishPath.TrimPath()).TrimPath();
             
-                if (FilePathShouldBeIgnored(appState, relativeComparablePath, file.Name))
+                if (FilePathShouldBeIgnoredDuringScan(appState, relativeComparablePath, file.Name))
                     continue;
                 
                 appState.LocalFiles.Add(new FileObject
@@ -210,14 +210,11 @@ public static class Storage
         await appState.CancellationTokenSource.CancelAsync();
     }
 
-    public static bool FolderPathShouldBeIgnored(AppState appState, string path, string segmentName)
+    public static bool FolderPathShouldBeIgnoredDuringScan(AppState appState, string path, string segmentName)
     {
-        // if (path == "umbraco")
-        //     Task.Delay(0);
-
         foreach (var ignorePath in appState.Settings.Paths.RelativeIgnorePaths)
         {
-            if (path.StartsWith(ignorePath) == false && ignorePath.StartsWith(path) == false)
+            if (path != ignorePath)
                 continue;
 
             return true;
@@ -226,11 +223,11 @@ public static class Storage
         return appState.Settings.Paths.IgnoreFoldersNamed.Contains(segmentName);
     }
 
-    public static bool FilePathShouldBeIgnored(AppState appState, string path, string segmentName)
+    public static bool FilePathShouldBeIgnoredDuringScan(AppState appState, string path, string segmentName)
     {
         foreach (var ignorePath in appState.Settings.Paths.RelativeIgnoreFilePaths)
         {
-            if (path.StartsWith(ignorePath) == false)
+            if (path != ignorePath)
                 continue;
 
             return true;
@@ -274,7 +271,7 @@ public static class Storage
                     try
                     {
                         file = (FileDirectoryInformation)item;
-
+                        
                         if (file.FileName is "." or "..")
                             continue;
 
@@ -285,10 +282,10 @@ public static class Storage
                             continue;
                         
                         var isDirectory = (file.FileAttributes & FileAttributes.Directory) == FileAttributes.Directory;
-
+                        
                         if (isDirectory)
                         {
-                            if (FolderPathShouldBeIgnored(appState, relativeComparablePath, file.FileName))
+                            if (FolderPathShouldBeIgnoredDuringScan(appState, relativeComparablePath, file.FileName))
                                 continue;
                             
                             if (appState.CurrentSpinner is not null)
@@ -310,7 +307,7 @@ public static class Storage
 
                         else
                         {
-                            if (FilePathShouldBeIgnored(appState, relativeComparablePath, file.FileName))
+                            if (FilePathShouldBeIgnoredDuringScan(appState, relativeComparablePath, file.FileName))
                                 continue;
 
                             appState.ServerFiles.Add(new FileObject

@@ -21,7 +21,10 @@ public sealed class FileObject
             if (string.IsNullOrEmpty(FilePath))
                 return [];
 
-            return _pathSegments ??= FilePath.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+            if (FilePath.Contains('/'))
+                return _pathSegments ??= FilePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+            return _pathSegments ??= FilePath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
         }
     }
 
