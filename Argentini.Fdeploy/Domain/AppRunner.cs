@@ -498,14 +498,29 @@ public sealed class AppRunner
         {
             var itemsToDelete = AppState.ServerFiles.Except(AppState.LocalFiles, new FileObjectComparer()).ToList();
 
+            // If deleting a folder, remove all descendants from lists
+            foreach (var folder in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
+            {
+                foreach (var item in itemsToDelete.ToList().Where(f => f.Id != folder.Id && f.RelativeComparablePath.StartsWith(folder.RelativeComparablePath)))
+                {
+                    itemsToDelete.Remove(item);
+                    AppState.ServerFiles.Remove(item);
+                }
+            }
+
+            foreach (var item in itemsToDelete)
+            {
+                if (item.IsFile)
+                    await Storage.DeleteServerFileAsync(AppState, item.FullPath);
+                else
+                    await Storage.DeleteServerFolderRecursiveAsync(AppState, item.FullPath);
+
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                    return;
+                
+                AppState.ServerFiles.Remove(item);
+            }
             
-            
-            
-
-
-
-
-
             if (AppState.CancellationTokenSource.IsCancellationRequested)
                 return;
         }
