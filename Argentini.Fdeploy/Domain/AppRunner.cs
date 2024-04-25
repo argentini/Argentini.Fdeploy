@@ -508,28 +508,43 @@ public sealed class AppRunner
 
         if (AppState.Settings.DeleteOrphans)
         {
-            var itemsToDelete = AppState.ServerFiles.Except(AppState.LocalFiles, new FileObjectComparer()).ToList();
-
-            // Remove descendants of folders to be deleted
-            foreach (var item in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
+            await Spinner.StartAsync("Deleting orphaned files and folders...", async spinner =>
             {
-                foreach (var subitem in itemsToDelete.ToList().OrderByDescending(o => o.Level))
+                AppState.CurrentSpinner = spinner;
+            
+                var itemsToDelete = AppState.ServerFiles.Except(AppState.LocalFiles, new FileObjectComparer()).ToList();
+                var itemCount = itemsToDelete.Count;
+
+                // Remove descendants of folders to be deleted
+                foreach (var item in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
                 {
-                    if (subitem.Level > item.Level && subitem.RelativeComparablePath.StartsWith(item.RelativeComparablePath))
-                        itemsToDelete.Remove(subitem);
+                    foreach (var subitem in itemsToDelete.ToList().OrderByDescending(o => o.Level))
+                    {
+                        if (subitem.Level > item.Level && subitem.RelativeComparablePath.StartsWith(item.RelativeComparablePath))
+                            itemsToDelete.Remove(subitem);
+                    }
                 }
-            }
 
-            foreach (var item in itemsToDelete)
-            {
-                if (item.IsFile)
-                    await Storage.DeleteServerFileAsync(AppState, item.FullPath);
-                else
-                    await Storage.DeleteServerFolderRecursiveAsync(AppState, item.FullPath);
+                foreach (var item in itemsToDelete)
+                {
+                    if (item.IsFile)
+                        await Storage.DeleteServerFileAsync(AppState, item.FullPath);
+                    else
+                        await Storage.DeleteServerFolderRecursiveAsync(AppState, item.FullPath);
 
+                    if (AppState.CancellationTokenSource.IsCancellationRequested)
+                        break;
+                }
+                
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
-                    return;
-            }
+                    spinner.Fail("Deleting orphaned files and folders... Failed!");
+                else
+                    spinner.Text = $"Deleting orphaned files and folders... {itemCount:N0} items... Success!";
+
+            }, Patterns.Dots, Patterns.Line);
+
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                return;
         }
         
         #endregion

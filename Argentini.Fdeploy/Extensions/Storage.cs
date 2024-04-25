@@ -566,8 +566,12 @@ public static class Storage
 
             if (appState.CurrentSpinner is not null)
             {
-                var text = appState.CurrentSpinner.Text.TrimEnd($" Retry {attempt}...");
-                appState.CurrentSpinner.Text = $"{text} Retry {attempt + 1}...";
+                var text = appState.CurrentSpinner.Text;
+
+                if (text.Contains("... Retry", StringComparison.Ordinal))
+                    text = appState.CurrentSpinner.Text[..text.IndexOf("... Retry", StringComparison.Ordinal)] + "...";
+
+                appState.CurrentSpinner.Text = $"{text} Retry {attempt + 1} ({smbFilePath.GetLastPathSegment()})...";
             }
 
             await Task.Delay(appState.Settings.WriteRetryDelaySeconds * 1000);
@@ -624,8 +628,12 @@ public static class Storage
 
             if (appState.CurrentSpinner is not null)
             {
-                var text = appState.CurrentSpinner.Text.TrimEnd($" Retry {attempt}...");
-                appState.CurrentSpinner.Text = $"{text} Retry {attempt + 1}...";
+                var text = appState.CurrentSpinner.Text;
+
+                if (text.Contains("... Retry", StringComparison.Ordinal))
+                    text = appState.CurrentSpinner.Text[..text.IndexOf("... Retry", StringComparison.Ordinal)] + "...";
+                
+                appState.CurrentSpinner.Text = $"{text} Retry {attempt + 1} ({smbFolderPath.GetLastPathSegment()}/)...";
             }
 
             await Task.Delay(appState.Settings.WriteRetryDelaySeconds * 1000);
@@ -659,7 +667,7 @@ public static class Storage
 
         // Delete all files in the path
 
-        foreach (var file in appState.ServerFiles.ToList().Where(f => f.IsFile && f.FilePath == smbFolderPath))
+        foreach (var file in appState.ServerFiles.ToList().Where(f => f.IsFile && f.FullPath.StartsWith(smbFolderPath)))
         {
             await DeleteServerFileAsync(appState, file.FullPath);
 
@@ -671,17 +679,11 @@ public static class Storage
         
         // Delete subfolders by level
 
-        foreach (var folder in appState.ServerFiles.ToList().Where(f => f.IsFolder && f.FilePath == smbFolderPath))
+        foreach (var folder in appState.ServerFiles.ToList().Where(f => f.IsFolder && f.FullPath.StartsWith(smbFolderPath)).OrderByDescending(o => o.Level))
         {
             await DeleteServerFolderAsync(appState, folder.FullPath);
 
             appState.ServerFiles.Remove(folder);
         }
-
-        if (appState.CancellationTokenSource.IsCancellationRequested)
-            return;
-        
-        // Delete remaining empty folder
-        await DeleteServerFolderAsync(appState, smbFolderPath);
     }
 }
