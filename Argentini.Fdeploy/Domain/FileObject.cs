@@ -7,6 +7,7 @@ public sealed class FileObject
     public required long FileSizeBytes { get; set; }
 
     public string FilePath { get; set; } = string.Empty;
+    public string RelativeComparablePath { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;
     public bool IsFile { get; set; }
     public bool IsFolder { get; set; }

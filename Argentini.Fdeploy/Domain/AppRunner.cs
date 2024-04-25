@@ -478,7 +478,7 @@ public sealed class AppRunner
         {
             AppState.CurrentSpinner = spinner;
             
-            await Storage.RecurseSmbPathAsync(AppState, AppState.Settings.Paths.RemoteRootPath.NormalizeSmbPath(), 0);
+            await Storage.RecurseSmbPathAsync(AppState, AppState.Settings.Paths.RemoteRootPath.NormalizeSmbPath());
 
             if (AppState.CancellationTokenSource.IsCancellationRequested)
                 spinner.Fail("Indexing server files... Failed!");
@@ -496,7 +496,7 @@ public sealed class AppRunner
 
         if (AppState.Settings.DeleteOrphans)
         {
-            var filesToDelete = new List<FileObject>();
+            var itemsToDelete = AppState.ServerFiles.Except(AppState.LocalFiles, new FileObjectComparer()).ToList();
 
             
             
@@ -506,6 +506,8 @@ public sealed class AppRunner
 
 
 
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                return;
         }
         
         #endregion

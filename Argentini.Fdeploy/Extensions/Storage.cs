@@ -15,7 +15,7 @@ public static class Storage
             if ((directory.Attributes & System.IO.FileAttributes.Hidden) == System.IO.FileAttributes.Hidden)
                 continue;
             
-            var trimmed = subdir.TrimPath().TrimStart(appState.TrimmablePublishPath).TrimPath(); 
+            var trimmed = subdir.TrimPath().TrimStart(appState.TrimmablePublishPath).TrimPath();
             
             if (appState.Settings.Paths.RelativeIgnorePaths.Contains(trimmed) || appState.Settings.Paths.IgnoreFoldersNamed.Contains(subdir.GetLastPathSegment()))
                 continue;
@@ -27,6 +27,7 @@ public static class Storage
                 FileName = subdir.GetLastPathSegment().TrimPath(),
                 LastWriteTime = directory.LastWriteTime.ToFileTimeUtc(),
                 FileSizeBytes = 0,
+                RelativeComparablePath = subdir.NormalizePath().TrimStart(appState.PublishPath.TrimPath()).TrimPath(),
                 IsFolder = true
             });
 
@@ -54,6 +55,7 @@ public static class Storage
                     FileName = file.Name,
                     LastWriteTime = file.LastWriteTime.ToFileTimeUtc(),
                     FileSizeBytes = file.Length,
+                    RelativeComparablePath = filePath.NormalizePath().TrimStart(appState.PublishPath.TrimPath()).TrimPath(),
                     IsFile = true
                 });
             }
@@ -207,7 +209,7 @@ public static class Storage
         await appState.CancellationTokenSource.CancelAsync();
     }
 
-    public static async ValueTask RecurseSmbPathAsync(AppState appState, string path, int level, bool includeHidden = false)
+    public static async ValueTask RecurseSmbPathAsync(AppState appState, string path, bool includeHidden = false)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -258,7 +260,7 @@ public static class Storage
                             if (appState.Settings.Paths.RelativeIgnorePaths.Contains(filePath.NormalizePath().TrimStart(appState.Settings.Paths.RemoteRootPath).TrimPath()) || appState.Settings.Paths.IgnoreFoldersNamed.Contains(file.FileName))
                                 continue;
                             
-                            if (appState.CurrentSpinner is not null && level == 0)
+                            if (appState.CurrentSpinner is not null)
                                 appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.Text[..appState.CurrentSpinner.Text.IndexOf("...", StringComparison.Ordinal)]}... {file.FileName}/...";
                             
                             appState.ServerFiles.Add(new FileObject
@@ -268,10 +270,11 @@ public static class Storage
                                 FileName = file.FileName,
                                 LastWriteTime = file.LastWriteTime.ToFileTimeUtc(),
                                 FileSizeBytes = 0,
+                                RelativeComparablePath = filePath.TrimStart(appState.Settings.Paths.RemoteRootPath.NormalizeSmbPath()).TrimPath().SetNativePathSeparators(),
                                 IsFolder = true
                             });
                             
-                            await RecurseSmbPathAsync(appState, filePath, level + 1);
+                            await RecurseSmbPathAsync(appState, filePath);
                         }
 
                         else
@@ -286,6 +289,7 @@ public static class Storage
                                 FileName = file.FileName,
                                 LastWriteTime = file.LastWriteTime.ToFileTimeUtc(),
                                 FileSizeBytes = file.Length,
+                                RelativeComparablePath = filePath.TrimStart(appState.Settings.Paths.RemoteRootPath.NormalizeSmbPath()).TrimPath().SetNativePathSeparators(),
                                 IsFile = true
                             });
                         }
