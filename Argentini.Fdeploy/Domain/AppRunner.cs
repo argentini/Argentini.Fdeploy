@@ -37,13 +37,7 @@ public sealed class AppRunner
     #region App State Properties
 
     public List<string> CliArguments { get; } = [];
-    public string AppOfflineMarkup { get; set; } = string.Empty;
-    public string YamlProjectFilePath { get; set; } = string.Empty;
-    public string WorkingPath { get; set; } = string.Empty;
-    public string PublishPath { get; set; } = string.Empty;
-    public string TrimmablePublishPath { get; set; } = string.Empty;
-
-    public SmbConfig SmbConfig { get; } = new();
+    public AppState AppState { get; }
 
     #endregion
     
@@ -55,12 +49,17 @@ public sealed class AppRunner
     
     public AppRunner(IEnumerable<string> args)
     {
+        AppState = new AppState
+        {
+            Client = new SMB2Client()
+        };
+
         #region Process Arguments
         
         CliArguments.AddRange(args);
 
         if (CliArguments.Count == 0)
-            YamlProjectFilePath = Path.Combine(Directory.GetCurrentDirectory(), "fdeploy.yml");
+            AppState.YamlProjectFilePath = Path.Combine(Directory.GetCurrentDirectory(), "fdeploy.yml");
         
         if (CliArguments.Count == 1)
         {
@@ -86,71 +85,66 @@ public sealed class AppRunner
 
             if (projectFilePath.EndsWith(".yml", StringComparison.OrdinalIgnoreCase) && projectFilePath.Contains(Path.DirectorySeparatorChar))
             {
-                YamlProjectFilePath = projectFilePath;
+                AppState.YamlProjectFilePath = projectFilePath;
             }
             else
             {
                 if (projectFilePath.EndsWith(".yml", StringComparison.OrdinalIgnoreCase))
-                    YamlProjectFilePath = Path.Combine(Directory.GetCurrentDirectory(), projectFilePath);
+                    AppState.YamlProjectFilePath = Path.Combine(Directory.GetCurrentDirectory(), projectFilePath);
                 else
-                    YamlProjectFilePath = Path.Combine(Directory.GetCurrentDirectory(), $"fdeploy-{projectFilePath}.yml");
+                    AppState.YamlProjectFilePath = Path.Combine(Directory.GetCurrentDirectory(), $"fdeploy-{projectFilePath}.yml");
             }
         }
         
         #if DEBUG
 
-        YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Fynydd-Website-2024/UmbracoCms", "fdeploy-staging.yml");
+        AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Fynydd-Website-2024/UmbracoCms", "fdeploy-staging.yml");
         
         #endif
 
         #endregion
         
         #region Load Settings
-    
-        SmbConfig = new SmbConfig
+        
+        if (File.Exists(AppState.YamlProjectFilePath) == false)
         {
-            Client = new SMB2Client()
-        };
-
-        if (File.Exists(YamlProjectFilePath) == false)
-        {
-            SmbConfig.Exceptions.Add($"Could not find project file `{YamlProjectFilePath}`");
-            SmbConfig.CancellationTokenSource.Cancel();
+            AppState.Exceptions.Add($"Could not find project file `{AppState.YamlProjectFilePath}`");
+            AppState.CancellationTokenSource.Cancel();
             return;
         }
 
-        if (YamlProjectFilePath.IndexOf(Path.DirectorySeparatorChar) < 0)
+        if (AppState.YamlProjectFilePath.IndexOf(Path.DirectorySeparatorChar) < 0)
         {
-            SmbConfig.Exceptions.Add($"Invalid project file path `{YamlProjectFilePath}`");
-            SmbConfig.CancellationTokenSource.Cancel();
+            AppState.Exceptions.Add($"Invalid project file path `{AppState.YamlProjectFilePath}`");
+            AppState.CancellationTokenSource.Cancel();
             return;
         }
             
-        WorkingPath = YamlProjectFilePath[..YamlProjectFilePath.LastIndexOf(Path.DirectorySeparatorChar)];
+        AppState.WorkingPath = AppState.YamlProjectFilePath[..AppState.YamlProjectFilePath.LastIndexOf(Path.DirectorySeparatorChar)];
         
-        var yaml = File.ReadAllText(YamlProjectFilePath);
+        var yaml = File.ReadAllText(AppState.YamlProjectFilePath);
         var deserializer = new DeserializerBuilder().IgnoreUnmatchedProperties().Build();
         
-        SmbConfig.Settings = deserializer.Deserialize<Settings>(yaml);
+        AppState.Settings = deserializer.Deserialize<Settings>(yaml);
         
         #endregion
 
         #region Normalize Paths
 
-        SmbConfig.Settings.Project.ProjectFilePath = SmbConfig.Settings.Project.ProjectFilePath.NormalizePath();
-        SmbConfig.Settings.Paths.RemoteRootPath = SmbConfig.Settings.Paths.RemoteRootPath.NormalizePath();
+        AppState.Settings.Project.ProjectFilePath = AppState.Settings.Project.ProjectFilePath.NormalizePath();
+        AppState.Settings.Paths.RemoteRootPath = AppState.Settings.Paths.RemoteRootPath.NormalizePath();
 
-        SmbConfig.Settings.Paths.StaticFilePaths.NormalizePaths();
-        SmbConfig.Settings.Paths.RelativeIgnorePaths.NormalizePaths();
-        SmbConfig.Settings.Paths.RelativeIgnoreFilePaths.NormalizePaths();
+        AppState.Settings.Paths.StaticFilePaths.NormalizePaths();
+        AppState.Settings.Paths.RelativeIgnorePaths.NormalizePaths();
+        AppState.Settings.Paths.RelativeIgnoreFilePaths.NormalizePaths();
 
-        foreach (var copy in SmbConfig.Settings.Paths.StaticFileCopies)
+        foreach (var copy in AppState.Settings.Paths.StaticFileCopies)
         {
             copy.Source = copy.Source.NormalizePath();
             copy.Destination = copy.Destination.NormalizePath();
         }
         
-        foreach (var copy in SmbConfig.Settings.Paths.FileCopies)
+        foreach (var copy in AppState.Settings.Paths.FileCopies)
         {
             copy.Source = copy.Source.NormalizePath();
             copy.Destination = copy.Destination.NormalizePath();
@@ -190,8 +184,8 @@ public sealed class AppRunner
         // ReSharper disable once InvertIf
         if (string.IsNullOrEmpty(workingPath) || Directory.Exists(workingPath) == false)
         {
-            SmbConfig.Exceptions.Add("Embedded YAML resources cannot be found.");
-            await SmbConfig.CancellationTokenSource.CancelAsync();
+            AppState.Exceptions.Add("Embedded YAML resources cannot be found.");
+            await AppState.CancellationTokenSource.CancelAsync();
             return string.Empty;
         }
         
@@ -227,8 +221,8 @@ public sealed class AppRunner
         // ReSharper disable once InvertIf
         if (string.IsNullOrEmpty(workingPath) || Directory.Exists(workingPath) == false)
         {
-            SmbConfig.Exceptions.Add("Embedded HTML resources cannot be found.");
-            await SmbConfig.CancellationTokenSource.CancelAsync();
+            AppState.Exceptions.Add("Embedded HTML resources cannot be found.");
+            await AppState.CancellationTokenSource.CancelAsync();
             return string.Empty;
         }
         
@@ -241,7 +235,7 @@ public sealed class AppRunner
     
     public async ValueTask OutputExceptionsAsync()
     {
-        foreach (var message in SmbConfig.Exceptions)
+        foreach (var message in AppState.Exceptions)
             await Console.Out.WriteLineAsync($"{CliErrorPrefix}{message}");
     }
 
@@ -259,7 +253,7 @@ public sealed class AppRunner
     
     #endregion
     
-    #region Storage
+    #region Deployment
    
     public async ValueTask DeployAsync()
     {
@@ -282,12 +276,12 @@ public sealed class AppRunner
 		
 		if (InitMode)
 		{
-			var yaml = await File.ReadAllTextAsync(Path.Combine(await GetEmbeddedYamlPathAsync(), "fdeploy.yml"), SmbConfig.CancellationTokenSource.Token);
+			var yaml = await File.ReadAllTextAsync(Path.Combine(await GetEmbeddedYamlPathAsync(), "fdeploy.yml"), AppState.CancellationTokenSource.Token);
 
-            if (SmbConfig.CancellationTokenSource.IsCancellationRequested == false)
-    			await File.WriteAllTextAsync(Path.Combine(Directory.GetCurrentDirectory(), "fdeploy.yml"), yaml, SmbConfig.CancellationTokenSource.Token);
+            if (AppState.CancellationTokenSource.IsCancellationRequested == false)
+    			await File.WriteAllTextAsync(Path.Combine(Directory.GetCurrentDirectory(), "fdeploy.yml"), yaml, AppState.CancellationTokenSource.Token);
 			
-            if (SmbConfig.CancellationTokenSource.IsCancellationRequested == false)
+            if (AppState.CancellationTokenSource.IsCancellationRequested == false)
             {
 			    await Console.Out.WriteLineAsync($"Created fdeploy.yml file at {Directory.GetCurrentDirectory()}");
 			    await Console.Out.WriteLineAsync();
@@ -320,42 +314,42 @@ public sealed class AppRunner
 			return;
 		}
 
-		await ColonOutAsync("Settings File", YamlProjectFilePath);
+		await ColonOutAsync("Settings File", AppState.YamlProjectFilePath);
 
-        if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+        if (AppState.CancellationTokenSource.IsCancellationRequested)
             return;
 
         #endregion
 
-        AppOfflineMarkup = await File.ReadAllTextAsync(Path.Combine(await GetEmbeddedHtmlPathAsync(), "AppOffline.html"), SmbConfig.CancellationTokenSource.Token);
-        AppOfflineMarkup = AppOfflineMarkup.Replace("{{MetaTitle}}", SmbConfig.Settings.Offline.MetaTitle);
-        AppOfflineMarkup = AppOfflineMarkup.Replace("{{PageTitle}}", SmbConfig.Settings.Offline.PageTitle);
-        AppOfflineMarkup = AppOfflineMarkup.Replace("{{PageHtml}}", SmbConfig.Settings.Offline.PageHtml);
+        AppState.AppOfflineMarkup = await File.ReadAllTextAsync(Path.Combine(await GetEmbeddedHtmlPathAsync(), "AppOffline.html"), AppState.CancellationTokenSource.Token);
+        AppState.AppOfflineMarkup = AppState.AppOfflineMarkup.Replace("{{MetaTitle}}", AppState.Settings.Offline.MetaTitle);
+        AppState.AppOfflineMarkup = AppState.AppOfflineMarkup.Replace("{{PageTitle}}", AppState.Settings.Offline.PageTitle);
+        AppState.AppOfflineMarkup = AppState.AppOfflineMarkup.Replace("{{PageHtml}}", AppState.Settings.Offline.PageHtml);
 
         await ColonOutAsync("Started Deployment", $"{DateTime.Now:HH:mm:ss.fff}");
         await Console.Out.WriteLineAsync();
         
         #region Connect to Server
 
-        await Spinner.StartAsync($"Connecting to {SmbConfig.Settings.ServerConnection.ServerAddress}...", spinner =>
+        await Spinner.StartAsync($"Connecting to {AppState.Settings.ServerConnection.ServerAddress}...", spinner =>
         {
-            Smb.Connect(SmbConfig);
+            Storage.Connect(AppState);
 
-            if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
             {
-                spinner.Fail($"Connecting to {SmbConfig.Settings.ServerConnection.ServerAddress}... Failed!");
-                Smb.Disconnect(SmbConfig);
+                spinner.Fail($"Connecting to {AppState.Settings.ServerConnection.ServerAddress}... Failed!");
+                Storage.Disconnect(AppState);
             
                 return Task.CompletedTask;
             }
 
-            spinner.Text = $"Connecting to {SmbConfig.Settings.ServerConnection.ServerAddress}... Success!";
+            spinner.Text = $"Connecting to {AppState.Settings.ServerConnection.ServerAddress}... Success!";
             
             return Task.CompletedTask;
             
         }, Patterns.Dots, Patterns.Line);
 
-        if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+        if (AppState.CancellationTokenSource.IsCancellationRequested)
             return;
         
         #endregion
@@ -364,67 +358,67 @@ public sealed class AppRunner
         
         // await Spinner.StartAsync("Test copy...", async spinner =>
         // {
-        //     SmbConfig.Spinner = spinner;
+        //     AppState.Spinner = spinner;
         //     
-        //     await Smb.CopyFileAsync(SmbConfig, "/Users/magic/Developer/Argentini.Fdeploy/clean.sh", $@"{SmbConfig.Settings.Paths.RemoteRootPath}\wwwroot\xxxx\abc\clean.sh");
+        //     await Smb.CopyFileAsync(AppState, "/Users/magic/Developer/Argentini.Fdeploy/clean.sh", $@"{AppState.Settings.Paths.RemoteRootPath}\wwwroot\xxxx\abc\clean.sh");
         //     
-        //     if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+        //     if (AppState.CancellationTokenSource.IsCancellationRequested)
         //         spinner.Fail("Test copy... Failed!");
         //     else
         //         spinner.Text = "Test copy... Success!";
         //
         // }, Patterns.Dots, Patterns.Line);
         //
-        // if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+        // if (AppState.CancellationTokenSource.IsCancellationRequested)
         //     return;
 
         // await Spinner.StartAsync("Test delete folder...", async spinner =>
         // {
-        //     SmbConfig.Spinner = spinner;
+        //     AppState.Spinner = spinner;
         //
-        //     await Smb.DeleteServerFolderRecursiveAsync(SmbConfig, $@"{SmbConfig.Settings.Paths.RemoteRootPath}\wwwroot\xxxx");
+        //     await Smb.DeleteServerFolderRecursiveAsync(AppState, $@"{AppState.Settings.Paths.RemoteRootPath}\wwwroot\xxxx");
         //     
-        //     if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+        //     if (AppState.CancellationTokenSource.IsCancellationRequested)
         //         spinner.Fail("Test delete folder... Failed!");
         //     else
         //         spinner.Text = "Test delete folder... Success!";
         //
         // }, Patterns.Dots, Patterns.Line);
         //
-        // if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+        // if (AppState.CancellationTokenSource.IsCancellationRequested)
         //     return;
 
         // await Spinner.StartAsync("Test delete...", async spinner =>
         // {
-        //     SmbConfig.Spinner = spinner;
+        //     AppState.Spinner = spinner;
         //
-        //     await Smb.DeleteServerFileAsync(SmbConfig, $@"{SmbConfig.Settings.Paths.RemoteRootPath}\wwwroot\xxxx\abc\clean.sh");
+        //     await Smb.DeleteServerFileAsync(AppState, $@"{AppState.Settings.Paths.RemoteRootPath}\wwwroot\xxxx\abc\clean.sh");
         //     
-        //     if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+        //     if (AppState.CancellationTokenSource.IsCancellationRequested)
         //         spinner.Fail("Test delete... Failed!");
         //     else
         //         spinner.Text = "Test delete... Success!";
         //
         // }, Patterns.Dots, Patterns.Line);
         //
-        // if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+        // if (AppState.CancellationTokenSource.IsCancellationRequested)
         //     return;
         
         #endregion
         
         #region Publish Project
 
-        PublishPath = $"{WorkingPath}{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}publish";
-        TrimmablePublishPath = PublishPath.TrimPath();
+        AppState.PublishPath = $"{AppState.WorkingPath}{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}publish";
+        AppState.TrimmablePublishPath = AppState.PublishPath.TrimPath();
 
         var sb = new StringBuilder();
 
-        await Spinner.StartAsync($"Publishing project {SmbConfig.Settings.Project.ProjectFileName}...", async spinner =>
+        await Spinner.StartAsync($"Publishing project {AppState.Settings.Project.ProjectFileName}...", async spinner =>
         {
             try
             {
                 var cmd = Cli.Wrap("dotnet")
-                    .WithArguments(new [] { "publish", "--framework", $"net{SmbConfig.Settings.Project.TargetFramework:N1}", $"{WorkingPath}{Path.DirectorySeparatorChar}{SmbConfig.Settings.Project.ProjectFilePath}", "-c", SmbConfig.Settings.Project.BuildConfiguration, "-o", PublishPath, $"/p:EnvironmentName={SmbConfig.Settings.Project.EnvironmentName}" })
+                    .WithArguments(new [] { "publish", "--framework", $"net{AppState.Settings.Project.TargetFramework:N1}", $"{AppState.WorkingPath}{Path.DirectorySeparatorChar}{AppState.Settings.Project.ProjectFilePath}", "-c", AppState.Settings.Project.BuildConfiguration, "-o", AppState.PublishPath, $"/p:EnvironmentName={AppState.Settings.Project.EnvironmentName}" })
                     .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
                     .WithStandardErrorPipe(PipeTarget.Null);
 		    
@@ -432,25 +426,25 @@ public sealed class AppRunner
 
                 if (result.IsSuccess == false)
                 {
-                    spinner.Fail($"Publishing project {SmbConfig.Settings.Project.ProjectFileName}... Failed!");
-                    SmbConfig.Exceptions.Add($"Could not publish the project; exit code: {result.ExitCode}");
-                    await SmbConfig.CancellationTokenSource.CancelAsync();
+                    spinner.Fail($"Publishing project {AppState.Settings.Project.ProjectFileName}... Failed!");
+                    AppState.Exceptions.Add($"Could not publish the project; exit code: {result.ExitCode}");
+                    await AppState.CancellationTokenSource.CancelAsync();
                     return;
                 }
 
-                spinner.Text = $"Published project {SmbConfig.Settings.Project.ProjectFileName}... Success!";
+                spinner.Text = $"Published project {AppState.Settings.Project.ProjectFileName}... Success!";
             }
 
             catch (Exception e)
             {
-                spinner.Fail($"Publishing project {SmbConfig.Settings.Project.ProjectFileName}... Failed!");
-                SmbConfig.Exceptions.Add($"Could not publish the project; {e.Message}");
-                await SmbConfig.CancellationTokenSource.CancelAsync();
+                spinner.Fail($"Publishing project {AppState.Settings.Project.ProjectFileName}... Failed!");
+                AppState.Exceptions.Add($"Could not publish the project; {e.Message}");
+                await AppState.CancellationTokenSource.CancelAsync();
             }
             
         }, Patterns.Dots, Patterns.Line);
 
-        if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+        if (AppState.CancellationTokenSource.IsCancellationRequested)
             return;
         
         #endregion
@@ -459,48 +453,48 @@ public sealed class AppRunner
 
         await Spinner.StartAsync("Indexing local files...", async spinner =>
         {
-            await RecurseLocalPathAsync(PublishPath);
+            await Storage.RecurseLocalPathAsync(AppState, AppState.PublishPath);
 
-            if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
                 spinner.Fail("Indexing local files... Failed!");
             else        
-                spinner.Text = $"Indexing local files... {SmbConfig.LocalFiles.Count(f => f.IsFile):N0} files... Success!";
+                spinner.Text = $"Indexing local files... {AppState.LocalFiles.Count(f => f.IsFile):N0} files... Success!";
             
         }, Patterns.Dots, Patterns.Line);
        
-        if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+        if (AppState.CancellationTokenSource.IsCancellationRequested)
             return;
         
         #endregion
        
         #region Index Server Files
 
-        await Smb.EnsureFileStoreAsync(SmbConfig);
+        await Storage.EnsureFileStoreAsync(AppState);
             
-        if (SmbConfig.FileStore is null)
+        if (AppState.FileStore is null)
             return;
         
         await Spinner.StartAsync("Indexing server files...", async spinner =>
         {
-            SmbConfig.Spinner = spinner;
+            AppState.CurrentSpinner = spinner;
             
-            await Smb.RecurseSmbPathAsync(SmbConfig, SmbConfig.Settings.Paths.RemoteRootPath.NormalizeSmbPath(), 0);
+            await Storage.RecurseSmbPathAsync(AppState, AppState.Settings.Paths.RemoteRootPath.NormalizeSmbPath(), 0);
 
-            if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
                 spinner.Fail("Indexing server files... Failed!");
             else
-                spinner.Text = $"Indexing server files... {SmbConfig.ServerFiles.Count(f => f.IsFile):N0} files... Success!";
+                spinner.Text = $"Indexing server files... {AppState.ServerFiles.Count(f => f.IsFile):N0} files... Success!";
 
         }, Patterns.Dots, Patterns.Line);
 
-        if (SmbConfig.CancellationTokenSource.IsCancellationRequested)
+        if (AppState.CancellationTokenSource.IsCancellationRequested)
             return;
 
         #endregion
         
         #region Process Deletions
 
-        if (SmbConfig.Settings.DeleteOrphans)
+        if (AppState.Settings.DeleteOrphans)
         {
             var filesToDelete = new List<FileObject>();
 
@@ -548,67 +542,8 @@ public sealed class AppRunner
         
         #endregion
         
-        Smb.Disconnect(SmbConfig);
+        Storage.Disconnect(AppState);
     }
-
-    private async ValueTask RecurseLocalPathAsync(string path)
-    {
-        foreach (var subdir in Directory.GetDirectories(path))
-        {
-            var directory = new DirectoryInfo(subdir);
-            
-            if ((directory.Attributes & FileAttributes.Hidden) == FileAttributes.Hidden)
-                continue;
-            
-            var trimmed = subdir.TrimPath().TrimStart(TrimmablePublishPath).TrimPath(); 
-            
-            if (SmbConfig.Settings.Paths.RelativeIgnorePaths.Contains(trimmed) || SmbConfig.Settings.Paths.IgnoreFoldersNamed.Contains(subdir.GetLastPathSegment()))
-                continue;
-
-            SmbConfig.LocalFiles.Add(new FileObject
-            {
-                FullPath = subdir,
-                FilePath = subdir.TrimPath().TrimEnd(subdir.GetLastPathSegment()).TrimPath(),
-                FileName = subdir.GetLastPathSegment().TrimPath(),
-                LastWriteTime = directory.LastWriteTime.ToFileTimeUtc(),
-                FileSizeBytes = 0,
-                IsFolder = true
-            });
-
-            await RecurseLocalPathAsync(subdir);
-        }
-        
-        foreach (var filePath in Directory.GetFiles(path))
-        {
-            try
-            {
-                var file = new FileInfo(filePath);
-
-                if ((file.Attributes & FileAttributes.Hidden) == FileAttributes.Hidden)
-                    continue;
-                
-                var trimmed = filePath.TrimPath().TrimStart(TrimmablePublishPath).TrimPath(); 
-
-                if (SmbConfig.Settings.Paths.RelativeIgnoreFilePaths.Contains(trimmed) || SmbConfig.Settings.Paths.IgnoreFilesNamed.Contains(file.Name))
-                    continue;
-
-                SmbConfig.LocalFiles.Add(new FileObject
-                {
-                    FullPath = filePath,
-                    FilePath = file.DirectoryName.TrimPath(),
-                    FileName = file.Name,
-                    LastWriteTime = file.LastWriteTime.ToFileTimeUtc(),
-                    FileSizeBytes = file.Length,
-                    IsFile = true
-                });
-            }
-            catch
-            {
-                SmbConfig.Exceptions.Add($"Could process local file `{filePath}`");
-                await SmbConfig.CancellationTokenSource.CancelAsync();
-            }
-        }
-    }
-
+    
     #endregion
 }
