@@ -579,12 +579,12 @@ public static class Storage
         }
     }
     
-    public static async ValueTask CopyFileAsync(AppState appState, string trimmablePublishPath, FileObject sourceFo)
+    public static async ValueTask CopyFileAsync(AppState appState, string trimmablePublishPath, FileObject fo)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
-        var relativePathWithFile = sourceFo.AbsolutePath.TrimPath().TrimStart(trimmablePublishPath).TrimPath();
+        var relativePathWithFile = fo.AbsolutePath.TrimPath().TrimStart(trimmablePublishPath).TrimPath();
         
         await CopyFileAsync(appState, relativePathWithFile, relativePathWithFile);
     }

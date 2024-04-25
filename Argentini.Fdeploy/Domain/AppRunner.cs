@@ -479,18 +479,6 @@ public sealed class AppRunner
             AppState.CurrentSpinner = spinner;
             
             await Storage.RecurseServerPathAsync(AppState, AppState.Settings.Paths.RemoteRootPath.NormalizeSmbPath());
-
-            // Remove paths that enclose ignore paths
-            foreach (var folder in AppState.ServerFiles.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
-            {
-                foreach (var ignorePath in AppState.Settings.Paths.RelativeIgnorePaths)
-                {
-                    if (ignorePath.StartsWith(folder.RelativeComparablePath) == false)
-                        continue;
-                    
-                    AppState.ServerFiles.Remove(folder);
-                }
-            }
             
             if (AppState.CancellationTokenSource.IsCancellationRequested)
                 spinner.Fail("Indexing server files... Failed!");
@@ -515,6 +503,18 @@ public sealed class AppRunner
                 var itemsToDelete = AppState.ServerFiles.Except(AppState.LocalFiles, new FileObjectComparer()).ToList();
                 var itemCount = itemsToDelete.Count;
 
+                // Remove paths that enclose ignore paths
+                foreach (var item in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
+                {
+                    foreach (var ignorePath in AppState.Settings.Paths.RelativeIgnorePaths)
+                    {
+                        if (ignorePath.StartsWith(item.RelativeComparablePath) == false)
+                            continue;
+                        
+                        itemsToDelete.Remove(item);
+                    }
+                }
+                
                 // Remove descendants of folders to be deleted
                 foreach (var item in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
                 {
@@ -551,9 +551,53 @@ public sealed class AppRunner
         
         #region Static File Sync
         
-        // foreach (var path in Settings.Paths.StaticFilePaths)
-        // {
-        // }
+        if (AppState.Settings.Paths.StaticFilePaths.Any())
+        {
+            await Spinner.StartAsync("Copying files (static file paths)...", async spinner =>
+            {
+                var foldersToCreate = new List<string>();
+                
+                AppState.CurrentSpinner = spinner;
+
+                foreach (var folder in AppState.LocalFiles.ToList().Where(f => f.IsFolder))
+                {
+                    if (AppState.ServerFiles.Any(f => f.IsFolder && f.RelativeComparablePath == folder.RelativeComparablePath) == false)
+                        foldersToCreate.Add($"{AppState.Settings.Paths.RemoteRootPath.SetSmbPathSeparators().TrimPath()}\\{folder.RelativeComparablePath.SetSmbPathSeparators().TrimPath()}");
+                }
+
+                foreach (var folder in foldersToCreate)
+                {
+                    spinner.Text = $"Copying files (static file paths)... create: {folder}...";
+
+                    await Storage.EnsureServerPathExists(AppState, folder);
+                }
+
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                {
+                    spinner.Fail("Copying files (static file paths)... Failed!");
+                    return;
+                }
+
+
+                
+                
+                
+
+
+
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                    spinner.Fail("Copying files (static file paths)... Failed!");
+                else
+                    spinner.Text = $"Copying files (static file paths)... Success!";
+
+            }, Patterns.Dots, Patterns.Line);
+
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                return;
+        }
+
+        
+        
         
         #endregion
 
