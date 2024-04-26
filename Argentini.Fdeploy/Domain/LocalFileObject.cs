@@ -7,7 +7,7 @@ public sealed class LocalFileObject : FileObject
 
     public LocalFileObject(AppState appState, string absolutePath, long lastWriteTime, long fileSizeBytes, bool isFile, string rootPath)
     {
-        AbsolutePath = $"{Path.DirectorySeparatorChar}{absolutePath.TrimPath()}";
+        AbsolutePath = $"{Path.DirectorySeparatorChar}{absolutePath.FormatLocalPath(appState)}";
         FileNameOrPathSegment = AbsolutePath.GetLastPathSegment();
         ParentPath = AbsolutePath.TrimEnd(FileNameOrPathSegment)?.TrimEnd(Path.DirectorySeparatorChar) ?? string.Empty;
         RelativeComparablePath = AbsolutePath.TrimPath().TrimStart(rootPath.TrimPath()).TrimPath();
@@ -19,7 +19,7 @@ public sealed class LocalFileObject : FileObject
 
         SetPathSegments();
 
-        AbsoluteServerPath = $"{appState.Settings.Paths.RemoteRootPath.NormalizeSmbPath()}\\{RelativeComparablePath.NormalizeSmbPath()}";
+        AbsoluteServerPath = $"{appState.Settings.Paths.RemoteRootPath}\\{RelativeComparablePath}".FormatServerPath(appState);
  
         foreach (var staticFilePath in appState.Settings.Paths.StaticFilePaths)
         {

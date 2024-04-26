@@ -625,6 +625,8 @@ public sealed class AppRunner
         {
             await Spinner.StartAsync("Copying static files...", async spinner =>
             {
+                AppState.CurrentSpinner = spinner;
+
                 var spinnerText = spinner.Text;
                 
                 foreach (var file in AppState.Settings.Paths.StaticFileCopies)
