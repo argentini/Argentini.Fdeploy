@@ -464,7 +464,7 @@ public sealed class AppRunner
             if (AppState.CancellationTokenSource.IsCancellationRequested)
                 spinner.Fail($"{spinnerText} Failed!");
             else        
-                spinner.Text = $"{spinnerText} {AppState.LocalFiles.Count(f => f.IsFile):N0} files, {AppState.LocalFiles.Count(f => f.IsFolder):N0} folders... Success!";
+                spinner.Text = $"{spinnerText} {AppState.LocalFiles.Count(f => f.IsFile):N0} file{(AppState.LocalFiles.Count(f => f.IsFile) == 1 ? string.Empty : "s")}, {AppState.LocalFiles.Count(f => f.IsFolder):N0} folders... Success!";
             
         }, Patterns.Dots, Patterns.Line);
        
@@ -491,7 +491,7 @@ public sealed class AppRunner
             if (AppState.CancellationTokenSource.IsCancellationRequested)
                 spinner.Fail($"{spinnerText} Failed!");
             else
-                spinner.Text = $"{spinnerText} {AppState.ServerFiles.Count(f => f.IsFile):N0} files, {AppState.ServerFiles.Count(f => f.IsFolder):N0} folders... Success!";
+                spinner.Text = $"{spinnerText} {AppState.ServerFiles.Count(f => f.IsFile):N0} file{(AppState.ServerFiles.Count(f => f.IsFile) == 1 ? string.Empty : "s")}, {AppState.ServerFiles.Count(f => f.IsFolder):N0} folders... Success!";
 
         }, Patterns.Dots, Patterns.Line);
 
@@ -511,7 +511,6 @@ public sealed class AppRunner
                 AppState.CurrentSpinner = spinner;
             
                 var itemsToDelete = AppState.ServerFiles.Except(AppState.LocalFiles, new FileObjectComparer()).ToList();
-                var itemCount = itemsToDelete.Count;
 
                 // Remove paths that enclose ignore paths
                 foreach (var item in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
@@ -549,7 +548,7 @@ public sealed class AppRunner
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
                     spinner.Fail($"{spinnerText} Failed!");
                 else
-                    spinner.Text = $"{spinnerText} {itemCount:N0} items... Success!";
+                    spinner.Text = $"{spinnerText} Success!";
 
             }, Patterns.Dots, Patterns.Line);
 
@@ -609,7 +608,7 @@ public sealed class AppRunner
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
                     spinner.Fail($"{spinnerText} Failed!");
                 else
-                    spinner.Text = $"{spinnerText} {filesToCopy.Count:N0} files... Success!";
+                    spinner.Text = $"{spinnerText} {filesToCopy.Count:N0} file{(filesToCopy.Count == 1 ? string.Empty : "s")}... Success!";
 
             }, Patterns.Dots, Patterns.Line);
 
@@ -637,7 +636,7 @@ public sealed class AppRunner
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
                     spinner.Fail($"{spinnerText} Failed!");
                 else
-                    spinner.Text = $"{spinnerText} {AppState.Settings.Paths.StaticFileCopies.Count:N0} files... Success!";
+                    spinner.Text = $"{spinnerText} {AppState.Settings.Paths.StaticFileCopies.Count:N0} file{(AppState.Settings.Paths.StaticFileCopies.Count == 1 ? string.Empty : "s")}... Success!";
 
             }, Patterns.Dots, Patterns.Line);
 
@@ -718,7 +717,7 @@ public sealed class AppRunner
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
                     spinner.Fail($"{spinnerText} Failed!");
                 else
-                    spinner.Text = $"{spinnerText} {filesCopied:N0} of {itemCount:N0} files updated... Success!";
+                    spinner.Text = $"{spinnerText} {filesCopied:N0} of {itemCount:N0} file{(filesCopied == 1 ? string.Empty : "s")} updated... Success!";
             }
             else
             {
@@ -750,7 +749,7 @@ public sealed class AppRunner
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
                     spinner.Fail($"{spinnerText} Failed!");
                 else
-                    spinner.Text = $"{spinnerText} {AppState.Settings.Paths.FileCopies.Count:N0} files... Success!";
+                    spinner.Text = $"{spinnerText} {AppState.Settings.Paths.FileCopies.Count:N0} file{(AppState.Settings.Paths.FileCopies.Count == 1 ? string.Empty : "s")}... Success!";
 
             }, Patterns.Dots, Patterns.Line);
 
@@ -817,6 +816,8 @@ public sealed class AppRunner
                 spinner.Fail($"{spinnerText} Failed!");
             else
                 spinner.Text = $"{spinnerText} Success!";
+
+            await Task.CompletedTask;
 
         }, Patterns.Dots, Patterns.Line);
 
