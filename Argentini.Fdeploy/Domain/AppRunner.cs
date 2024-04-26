@@ -734,6 +734,30 @@ public sealed class AppRunner
         
         #region Process File Copies
         
+        if (AppState.Settings.Paths.FileCopies.Any())
+        {
+            await Spinner.StartAsync("Processing file copies...", async spinner =>
+            {
+                AppState.CurrentSpinner = spinner;
+
+                var spinnerText = spinner.Text;
+                
+                foreach (var file in AppState.Settings.Paths.FileCopies)
+                {
+                    await Storage.CopyFileAsync(AppState, file.Source, file.Destination);
+                }
+                
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                    spinner.Fail($"{spinnerText} Failed!");
+                else
+                    spinner.Text = $"{spinnerText} {AppState.Settings.Paths.FileCopies.Count:N0} files... Success!";
+
+            }, Patterns.Dots, Patterns.Line);
+
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                return;
+        }
+        
         #endregion
         
         #region Bring Server Online
@@ -780,6 +804,24 @@ public sealed class AppRunner
         #endregion
         
         #region Local Cleanup
+        
+        await Spinner.StartAsync("Cleaning up...", async spinner =>
+        {
+            AppState.CurrentSpinner = spinner;
+
+            var spinnerText = spinner.Text;
+
+            Directory.Delete(AppState.PublishPath, true);
+                
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                spinner.Fail($"{spinnerText} Failed!");
+            else
+                spinner.Text = $"{spinnerText} Success!";
+
+        }, Patterns.Dots, Patterns.Line);
+
+        if (AppState.CancellationTokenSource.IsCancellationRequested)
+            return;
         
         #endregion
         
