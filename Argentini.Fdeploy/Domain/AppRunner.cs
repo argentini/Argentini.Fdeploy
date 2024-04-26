@@ -649,7 +649,45 @@ public sealed class AppRunner
 
         #endregion
 
+        #region Identify Files To Copy
+        
+        var itemsToCopy = AppState.LocalFiles.ToList();
+
+        foreach (var fo in itemsToCopy.ToList())
+        {
+            foreach (var path in AppState.Settings.Paths.StaticFilePaths)
+            {
+                if (fo.RelativeComparablePath.StartsWith(path))
+                    itemsToCopy.Remove(fo);
+            }
+        }
+        
+        var itemCount = itemsToCopy.Count;
+
+        #endregion
+        
         #region Take Server Offline
+
+        if (AppState.Settings.TakeServerOffline)
+        {
+            await Spinner.StartAsync("Take website offline...", async spinner =>
+            {
+                AppState.CurrentSpinner = spinner;
+
+                var spinnerText = spinner.Text;
+
+                await Storage.CreateOfflineFileAsync(AppState);
+                
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                    spinner.Fail($"{spinnerText} Failed!");
+                else
+                    spinner.Text = $"{spinnerText} Success!";
+
+            }, Patterns.Dots, Patterns.Line);
+
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                return;
+        }
         
         #endregion
         
@@ -662,6 +700,27 @@ public sealed class AppRunner
         #endregion
         
         #region Bring Server Online
+        
+        if (AppState.Settings.TakeServerOffline)
+        {
+            await Spinner.StartAsync("Bring website online...", async spinner =>
+            {
+                AppState.CurrentSpinner = spinner;
+
+                var spinnerText = spinner.Text;
+
+                await Storage.DeleteOfflineFileAsync(AppState);
+                
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                    spinner.Fail($"{spinnerText} Failed!");
+                else
+                    spinner.Text = $"{spinnerText} Success!";
+
+            }, Patterns.Dots, Patterns.Line);
+
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                return;
+        }
         
         #endregion
         

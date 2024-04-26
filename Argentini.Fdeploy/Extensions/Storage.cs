@@ -713,11 +713,11 @@ public static class Storage
             await appState.CancellationTokenSource.CancelAsync();
         }
     }
-
+    
     public static async ValueTask ChangeModifyDateAsync(AppState appState, LocalFileObject fo)
-    {
-        await ChangeModifyDateAsync(appState, fo.AbsoluteServerPath, fo.LastWriteTime);
-    }    
+{
+    await ChangeModifyDateAsync(appState, fo.AbsoluteServerPath, fo.LastWriteTime);
+}    
 
     public static async ValueTask ChangeModifyDateAsync(AppState appState, string serverFilePath, long fileTime)
     {
@@ -758,5 +758,140 @@ public static class Storage
             appState.FileStore.CloseFile(handle);
     }    
 
+    #endregion
+    
+    #region Offline Support
+    
+    public static async ValueTask CreateOfflineFileAsync(AppState appState)
+    {
+        if (appState.CancellationTokenSource.IsCancellationRequested)
+            return;
+
+        await EnsureFileStoreAsync(appState);
+
+        if (appState.FileStore is null)
+            return;
+
+        var serverFilePath = $"{appState.Settings.Paths.RemoteRootPath}/app_offline.htm".FormatServerPath(appState);
+        
+        try
+        {
+            var success = true;
+            var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
+            var fileExists = await ServerFileExistsAsync(appState, serverFilePath);
+            var spinnerText = appState.CurrentSpinner?.Text ?? string.Empty;
+            
+            for (var attempt = 0; attempt < retries; attempt++)
+            {
+                var status = appState.FileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, fileExists ? CreateDisposition.FILE_OVERWRITE : CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+                    
+                if (status == NTStatus.STATUS_SUCCESS)
+                {
+                    var numberOfBytesWritten = 0;
+                    var data = Encoding.UTF8.GetBytes(appState.AppOfflineMarkup);
+
+                    status = appState.FileStore.WriteFile(out numberOfBytesWritten, handle, 0, data);
+                    
+                    if (status != NTStatus.STATUS_SUCCESS)
+                    {
+                        throw new Exception("Failed to write to file");
+                    }                    
+                    
+                    if (appState.CurrentSpinner is not null)
+                        appState.CurrentSpinner.Text = $"{spinnerText} ({numberOfBytesWritten.FormatBytes()})...";
+                }
+
+                if (handle is not null)
+                    appState.FileStore.CloseFile(handle);
+
+                if (success)
+                    break;
+
+                for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
+                {
+                    if (appState.CurrentSpinner is not null)
+                        appState.CurrentSpinner.Text = $"{spinnerText} Retry {attempt + 1} ({x:N0})...";
+
+                    await Task.Delay(1000);
+                }
+            }
+
+            if (success == false)
+            {
+                appState.Exceptions.Add($"Failed to create offline file {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{serverFilePath}`");
+                await appState.CancellationTokenSource.CancelAsync();
+            }
+        }
+        catch
+        {
+            appState.Exceptions.Add($"Failed to create offline file `{serverFilePath}`");
+            await appState.CancellationTokenSource.CancelAsync();
+        }
+    }
+    
+    public static async ValueTask DeleteOfflineFileAsync(AppState appState)
+    {
+        if (appState.CancellationTokenSource.IsCancellationRequested)
+            return;
+        
+        await EnsureFileStoreAsync(appState);
+
+        if (appState.FileStore is null)
+            return;
+
+        var serverFilePath = $"{appState.Settings.Paths.RemoteRootPath}/app_offline.htm".FormatServerPath(appState);
+        var success = true;
+        var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
+        
+        for (var attempt = 0; attempt < retries; attempt++)
+        {
+            var status = appState.FileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+
+            if (status == NTStatus.STATUS_SUCCESS)
+            {
+                var fileDispositionInformation = new FileDispositionInformation
+                {
+                    DeletePending = true
+                };
+                
+                status = appState.FileStore.SetFileInformation(handle, fileDispositionInformation);
+                success = status == NTStatus.STATUS_SUCCESS;
+            }
+            else
+            {
+                var fileExists = await ServerFileExistsAsync(appState, serverFilePath);
+        
+                if (fileExists == false)
+                    success = true;
+                else        
+                    success = false;
+            }
+
+            if (handle is not null)
+                appState.FileStore.CloseFile(handle);
+
+            if (success)
+                break;
+
+            if (appState.CurrentSpinner is not null)
+            {
+                var text = appState.CurrentSpinner.Text;
+
+                if (text.Contains("... Retry", StringComparison.Ordinal))
+                    text = appState.CurrentSpinner.Text[..text.IndexOf("... Retry", StringComparison.Ordinal)] + "...";
+
+                appState.CurrentSpinner.Text = $"{text} Retry {attempt + 1} ({serverFilePath.GetLastPathSegment()})...";
+            }
+
+            await Task.Delay(appState.Settings.WriteRetryDelaySeconds * 1000);
+        }
+
+        if (success == false)
+        {
+            appState.Exceptions.Add($"Failed to delete offline file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{serverFilePath}`");
+            await appState.CancellationTokenSource.CancelAsync();
+        }
+    }
+    
     #endregion
 }
