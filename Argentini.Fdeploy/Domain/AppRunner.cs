@@ -631,8 +631,6 @@ public sealed class AppRunner
                 
                 foreach (var file in AppState.Settings.Paths.StaticFileCopies)
                 {
-                    spinner.Text = $"{spinnerText} {file.Source} => {file.Destination}";
-                    
                     await Storage.CopyFileAsync(AppState, file.Source, file.Destination);
                 }
                 
@@ -649,27 +647,14 @@ public sealed class AppRunner
 
         #endregion
 
-        #region Identify Files To Copy
-        
-        var itemsToCopy = AppState.LocalFiles.ToList();
-
-        foreach (var fo in itemsToCopy.ToList())
-        {
-            foreach (var path in AppState.Settings.Paths.StaticFilePaths)
-            {
-                if (fo.RelativeComparablePath.StartsWith(path))
-                    itemsToCopy.Remove(fo);
-            }
-        }
-        
-        var itemCount = itemsToCopy.Count;
-
-        #endregion
-        
         #region Take Server Offline
 
+        var offlineTimer = new Stopwatch();
+        
         if (AppState.Settings.TakeServerOffline)
         {
+            offlineTimer.Start();
+            
             await Spinner.StartAsync("Take website offline...", async spinner =>
             {
                 AppState.CurrentSpinner = spinner;
@@ -691,8 +676,60 @@ public sealed class AppRunner
         
         #endregion
         
-        #region File Sync
+        #region File Copy!
+
+        var itemsToCopy = AppState.LocalFiles.Where(f => f.IsFile).ToList();
+
+        foreach (var fo in itemsToCopy.ToList())
+        {
+            foreach (var path in AppState.Settings.Paths.StaticFilePaths)
+            {
+                if (fo.RelativeComparablePath.StartsWith(path))
+                    itemsToCopy.Remove(fo);
+            }
+        }
         
+        var itemCount = itemsToCopy.Count;
+
+        await Spinner.StartAsync("Deploy files...", async spinner =>
+        {
+            AppState.CurrentSpinner = spinner;
+
+            var spinnerText = spinner.Text;
+            var filesCopied = 0;
+
+            if (itemCount > 0)
+            {
+                foreach (var fo in itemsToCopy)
+                {
+                    var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == fo.RelativeComparablePath);
+
+                    if (serverFile is not null && serverFile.LastWriteTime == fo.LastWriteTime && serverFile.FileSizeBytes == fo.FileSizeBytes)
+                        continue;
+
+                    await Storage.CopyFileAsync(AppState, fo);
+
+                    if (AppState.CancellationTokenSource.IsCancellationRequested)
+                        break;
+
+                    filesCopied++;
+                }
+                    
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                    spinner.Fail($"{spinnerText} Failed!");
+                else
+                    spinner.Text = $"{spinnerText} {filesCopied:N0} of {itemCount:N0} files updated... Success!";
+            }
+            else
+            {
+                spinner.Text = $"{spinnerText} no files to update... Success!";
+            }
+
+        }, Patterns.Dots, Patterns.Line);
+
+        if (AppState.CancellationTokenSource.IsCancellationRequested)
+            return;
+
         #endregion
         
         #region Process File Copies
@@ -720,6 +757,24 @@ public sealed class AppRunner
 
             if (AppState.CancellationTokenSource.IsCancellationRequested)
                 return;
+            
+            await Spinner.StartAsync("Website offline for ", async spinner =>
+            {
+                var elapsedMsg = string.Empty;
+                var elapsed = offlineTimer.Elapsed;
+                
+                if (elapsed.TotalSeconds < 3600)
+                    elapsedMsg = $"{elapsed.Minutes:N0}m {elapsed.Seconds:N0}s";
+                else if (elapsed.TotalSeconds < 86400)
+                    elapsedMsg = $"{elapsed.Hours:N0}h {elapsed.Minutes:N0}m {elapsed.Seconds:N0}s";
+                else
+                    elapsedMsg = $"{elapsed.Days:N0}d {elapsed.Hours:N0}h {elapsed.Minutes:N0}m {elapsed.Seconds:N0}s left";
+                
+                spinner.Text += elapsedMsg;
+
+                await Task.CompletedTask;
+
+            }, Patterns.Dots, Patterns.Line);
         }
         
         #endregion

@@ -623,6 +623,9 @@ public static class Storage
         }
      
         var spinnerText = appState.CurrentSpinner?.Text ?? string.Empty;
+
+        if (spinnerText.IndexOf("...", StringComparison.Ordinal) > 0)
+            spinnerText = spinnerText[..spinnerText.IndexOf("...", StringComparison.Ordinal)] + "...";
         
         serverFilePath = serverFilePath.FormatServerPath(appState);
         
@@ -679,7 +682,7 @@ public static class Storage
                         if (appState.CurrentSpinner is null)
                             continue;
                         
-                        appState.CurrentSpinner.Text = $"{spinnerText} ({writeOffset.FormatBytes()})...";
+                        appState.CurrentSpinner.Text = $"{spinnerText} {localFilePath.GetLastPathSegment()} ({(writeOffset > 0 ? 100/(fileSizeBytes/writeOffset) : 0):N0}%)...";
                     }
                 }
 
