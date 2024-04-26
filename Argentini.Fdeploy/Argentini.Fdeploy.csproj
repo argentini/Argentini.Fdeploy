@@ -5,6 +5,32 @@
         <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+
+        <AssemblyVersion>1.0.0.0</AssemblyVersion>
+        <FileVersion>1.0.0.0</FileVersion>
+        <PackageVersion>1.0.0</PackageVersion>
+        <PackAsTool>true</PackAsTool>
+        <ToolCommandName>fdeploy</ToolCommandName>
+        <PackageOutputPath>./nupkg</PackageOutputPath>
+        <PackageId>argentini.fdeploy</PackageId>
+        <Authors>Michael Argentini</Authors>
+        <Company>Argentini Unlimited, Ltd.</Company>
+        <PackageTags>ASP.NET;Deployment;Deploy;CLI;SMB;SMB2;SMB3</PackageTags>
+        <Description>
+            Fdeploy is a CLI tool for performing SMB file-copy based deployments of ASP.NET web applications (Razor, Blazor, etc.).
+
+            Install dotnet 8 from https://dotnet.microsoft.com/en-us/download and then install Fdeploy with the following command:
+
+            dotnet tool install --global argentini.fdeploy
+        </Description>
+        <Copyright>Copyright (c) Michael Argentini 2024.</Copyright>
+        <PackageProjectUrl>https://github.com/argentini/Argentini.Fdeploy</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/argentini/Argentini.Deploy</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageReleaseNotes>Initial release!</PackageReleaseNotes>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
+        <PackageIcon>fdeploy-icon.png</PackageIcon>
     </PropertyGroup>
 
     <ItemGroup>
@@ -14,10 +40,21 @@
     </ItemGroup>
 
     <ItemGroup>
-      <None Remove="html\AppOffline.html" />
-      <Resource Include="html\AppOffline.html" />
-      <None Remove="yaml\fdeploy.yml" />
-      <Resource Include="yaml\fdeploy.yml" />
+        <None Include="html\**" Exclude="**\.DS_Store">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <Pack>true</Pack>
+            <PackagePath>contentFiles\any\any\html\</PackagePath>
+        </None>
+        <None Include="yaml\**" Exclude="**\.DS_Store">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <Pack>true</Pack>
+            <PackagePath>contentFiles\any\any\yaml\</PackagePath>
+        </None>
+        <None Include="README.md" Pack="true" PackagePath="" />
+        <None Include="LICENSE.txt" Pack="true" PackagePath="" />
+        <None Include="fdeploy-icon.png" Pack="true" PackagePath="" />
     </ItemGroup>
-
+    
+    
+    
 </Project>
