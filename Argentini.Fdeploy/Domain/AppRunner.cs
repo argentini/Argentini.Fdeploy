@@ -589,7 +589,9 @@ public sealed class AppRunner
                     return;
                 }
 
-                foreach (var file in AppState.LocalFiles.ToList().Where(f => f is { IsFile: true, IsStaticFilePath: true }))
+                var filesToCopy = AppState.LocalFiles.ToList().Where(f => f is { IsFile: true, IsStaticFilePath: true }).ToList();
+                
+                foreach (var file in filesToCopy)
                 {
                     var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == file.RelativeComparablePath);
 
@@ -607,7 +609,7 @@ public sealed class AppRunner
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
                     spinner.Fail($"{spinnerText} Failed!");
                 else
-                    spinner.Text = $"{spinnerText} Success!";
+                    spinner.Text = $"{spinnerText} {filesToCopy.Count:N0} files... Success!";
 
             }, Patterns.Dots, Patterns.Line);
 
@@ -615,13 +617,34 @@ public sealed class AppRunner
                 return;
         }
 
-        
-        
-        
         #endregion
 
         #region Process Static File Copies
-        
+
+        if (AppState.Settings.Paths.StaticFileCopies.Any())
+        {
+            await Spinner.StartAsync("Copying static files...", async spinner =>
+            {
+                var spinnerText = spinner.Text;
+                
+                foreach (var file in AppState.Settings.Paths.StaticFileCopies)
+                {
+                    spinner.Text = $"{spinnerText} {file.Source} => {file.Destination}";
+                    
+                    await Storage.CopyFileAsync(AppState, file.Source, file.Destination);
+                }
+                
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                    spinner.Fail($"{spinnerText} Failed!");
+                else
+                    spinner.Text = $"{spinnerText} {AppState.Settings.Paths.StaticFileCopies.Count:N0} files... Success!";
+
+            }, Patterns.Dots, Patterns.Line);
+
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                return;
+        }
+
         #endregion
 
         #region Take Server Offline

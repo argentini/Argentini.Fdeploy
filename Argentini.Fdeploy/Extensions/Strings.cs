@@ -900,4 +900,18 @@ public static class Strings
 
         return filePath;
     }
+
+    public static string FormatLocalFilePath(this string localFilePath, AppState appState)
+    {
+        var formattedPath = localFilePath.NormalizePath().TrimStart(appState.TrimmablePublishPath).TrimPath();
+        
+        return $"{appState.PublishPath}{(formattedPath != string.Empty ? $"/{formattedPath}" : string.Empty)}";
+    }
+
+    public static string FormatServerFilePath(this string serverFilePath, AppState appState)
+    {
+        var formattedPath = serverFilePath.NormalizeSmbPath().TrimStart(appState.Settings.Paths.RemoteRootPath.NormalizeSmbPath()).TrimPath();
+        
+        return $"{appState.Settings.Paths.RemoteRootPath.NormalizeSmbPath()}{(formattedPath != string.Empty ? $"\\{formattedPath}" : string.Empty)}";
+    }
 }
