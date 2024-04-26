@@ -2,7 +2,10 @@ namespace Argentini.Fdeploy.Domain;
 
 public sealed class LocalFileObject : FileObject
 {
-    public LocalFileObject(string absolutePath, long lastWriteTime, long fileSizeBytes, bool isFile, string rootPath)
+    public bool IsStaticFilePath { get; }
+    public string AbsoluteServerPath { get; }
+
+    public LocalFileObject(AppState appState, string absolutePath, long lastWriteTime, long fileSizeBytes, bool isFile, string rootPath)
     {
         AbsolutePath = $"{Path.DirectorySeparatorChar}{absolutePath.TrimPath()}";
         FileNameOrPathSegment = AbsolutePath.GetLastPathSegment();
@@ -15,5 +18,16 @@ public sealed class LocalFileObject : FileObject
         IsFolder = isFile == false;
 
         SetPathSegments();
+
+        AbsoluteServerPath = $"{appState.Settings.Paths.RemoteRootPath.NormalizeSmbPath()}\\{RelativeComparablePath.NormalizeSmbPath()}";
+ 
+        foreach (var staticFilePath in appState.Settings.Paths.StaticFilePaths)
+        {
+            if (RelativeComparablePath.StartsWith(staticFilePath) == false)
+                continue;
+
+            IsStaticFilePath = true;
+            return;
+        }
     }
 }

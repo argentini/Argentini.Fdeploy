@@ -1,7 +1,8 @@
-using SMBLibrary.SMB1;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Argentini.Fdeploy.Domain;
 
+[SuppressMessage("ReSharper", "MemberCanBeProtected.Global")]
 public abstract class FileObject
 {
     public string AbsolutePath { get; protected set; } = string.Empty;

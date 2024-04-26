@@ -458,7 +458,7 @@ public sealed class AppRunner
             if (AppState.CancellationTokenSource.IsCancellationRequested)
                 spinner.Fail("Indexing local files... Failed!");
             else        
-                spinner.Text = $"Indexing local files... {AppState.LocalFiles.Count(f => f.IsFile):N0} files... Success!";
+                spinner.Text = $"Indexing local files... {AppState.LocalFiles.Count(f => f.IsFile):N0} files, {AppState.LocalFiles.Count(f => f.IsFolder):N0} folders... Success!";
             
         }, Patterns.Dots, Patterns.Line);
        
@@ -483,7 +483,7 @@ public sealed class AppRunner
             if (AppState.CancellationTokenSource.IsCancellationRequested)
                 spinner.Fail("Indexing server files... Failed!");
             else
-                spinner.Text = $"Indexing server files... {AppState.ServerFiles.Count(f => f.IsFile):N0} files... Success!";
+                spinner.Text = $"Indexing server files... {AppState.ServerFiles.Count(f => f.IsFile):N0} files, {AppState.ServerFiles.Count(f => f.IsFolder):N0} folders... Success!";
 
         }, Patterns.Dots, Patterns.Line);
 
@@ -549,7 +549,7 @@ public sealed class AppRunner
         
         #endregion
         
-        #region Static File Sync
+        #region Copy Static Files
         
         if (AppState.Settings.Paths.StaticFilePaths.Any())
         {
@@ -559,7 +559,7 @@ public sealed class AppRunner
                 
                 AppState.CurrentSpinner = spinner;
 
-                foreach (var folder in AppState.LocalFiles.ToList().Where(f => f.IsFolder))
+                foreach (var folder in AppState.LocalFiles.ToList().Where(f => f is { IsFolder: true, IsStaticFilePath: true }))
                 {
                     if (AppState.ServerFiles.Any(f => f.IsFolder && f.RelativeComparablePath == folder.RelativeComparablePath) == false)
                         foldersToCreate.Add($"{AppState.Settings.Paths.RemoteRootPath.SetSmbPathSeparators().TrimPath()}\\{folder.RelativeComparablePath.SetSmbPathSeparators().TrimPath()}");
@@ -578,17 +578,25 @@ public sealed class AppRunner
                     return;
                 }
 
+                foreach (var file in AppState.LocalFiles.ToList().Where(f => f is { IsFile: true, IsStaticFilePath: true }))
+                {
+                    var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == file.RelativeComparablePath);
 
+                    if (serverFile is not null && serverFile.LastWriteTime == file.LastWriteTime && serverFile.FileSizeBytes == file.FileSizeBytes)
+                    {
+                        spinner.Text = $"Copying files (static file paths)... {file.FileNameOrPathSegment}; already up-to-date...";
+                    }
+                    else
+                    {
+                        spinner.Text = $"Copying files (static file paths)... {file.FileNameOrPathSegment}...";
+                        await Storage.CopyFileAsync(AppState, file);
+                    }
+                }
                 
-                
-                
-
-
-
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
                     spinner.Fail("Copying files (static file paths)... Failed!");
                 else
-                    spinner.Text = $"Copying files (static file paths)... Success!";
+                    spinner.Text = "Copying files (static file paths)... Success!";
 
             }, Patterns.Dots, Patterns.Line);
 
