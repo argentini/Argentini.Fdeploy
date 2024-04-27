@@ -6,6 +6,10 @@ internal class Program
 	{
         Console.OutputEncoding = Encoding.UTF8;
 
+        var totalTimer = new Stopwatch();
+
+        totalTimer.Start();
+        
         var runner = new AppRunner(args);
 
         if (runner.AppState.CancellationTokenSource.IsCancellationRequested)
@@ -31,7 +35,7 @@ internal class Program
         }
         
         if (runner is { VersionMode: false, HelpMode: false, InitMode: false })
-            await AppRunner.ColonOutAsync("Total Run Time", $"{TimeSpan.FromMilliseconds(runner.Timer.ElapsedMilliseconds):c}");
+            await AppRunner.ColonOutAsync("Total Run Time", $"{totalTimer.Elapsed.FormatElapsedTime()}");
 
         await Console.Out.WriteLineAsync();
 

@@ -914,4 +914,18 @@ public static class Strings
         
         return $"{appState.Settings.Paths.RemoteRootPath.NormalizeSmbPath()}{(formattedPath != string.Empty ? $"\\{formattedPath}" : string.Empty)}";
     }
+
+    public static string FormatElapsedTime(this TimeSpan elapsed)
+    {
+        if (elapsed.TotalSeconds < 60)
+            return $"{elapsed.Seconds:N0}.{elapsed.Milliseconds:000}s";
+
+        if (elapsed.TotalSeconds < 3600)
+            return $"{elapsed.Minutes:N0}m {elapsed.Seconds:N0}s";
+
+        if (elapsed.TotalSeconds < 86400)
+            return $"{elapsed.Hours:N0}h {elapsed.Minutes:N0}m {elapsed.Seconds:N0}s";
+        
+        return $"{elapsed.Days:N0}d {elapsed.Hours:N0}h {elapsed.Minutes:N0}m {elapsed.Seconds:N0}s left";
+    }
 }

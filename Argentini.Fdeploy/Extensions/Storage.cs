@@ -365,7 +365,7 @@ public static class Storage
 
             #region Files
 
-            if (files.Count > 0)
+            if (files.Count != 0)
             {
                 Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = maxTasks }, (i, state) =>
                 {
