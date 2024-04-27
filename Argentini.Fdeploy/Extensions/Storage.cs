@@ -1,5 +1,6 @@
 using System.Net.Sockets;
 using SMBLibrary;
+using SMBLibrary.Client;
 using FileAttributes = SMBLibrary.FileAttributes;
 
 namespace Argentini.Fdeploy.Extensions;
@@ -110,7 +111,7 @@ public static class Storage
             limit++;
             tasks.Add(CopyFolderAsync(appState, subdir.FullName, Path.Combine(localDestinationPath, subdir.Name), maxTasks));
             
-            if (limit % maxTasks == limit / maxTasks)
+            if (limit % maxTasks == 0)
             {
                 if (appState.CancellationTokenSource.IsCancellationRequested == false)
                     await Task.WhenAll(tasks);
@@ -158,18 +159,18 @@ public static class Storage
     
     #region SMB
     
-    public static void Connect(AppState appState)
+    public static SMB2Client? ConnectClient(AppState appState, bool verifyShare = false)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
-            return;
+            return null;
         
         var serverAvailable = false;
         
-        using (var client = new TcpClient())
+        using (var tcpClient = new TcpClient())
         {
             try
             {
-                var result = client.BeginConnect(appState.Settings.ServerConnection.ServerAddress, 445, null, null);
+                var result = tcpClient.BeginConnect(appState.Settings.ServerConnection.ServerAddress, 445, null, null);
                 
                 serverAvailable = result.AsyncWaitHandle.WaitOne(TimeSpan.FromMilliseconds(appState.Settings.ServerConnection.ConnectTimeoutMs));
             }
@@ -179,7 +180,7 @@ public static class Storage
             }
             finally
             {
-                client.Close();
+                tcpClient.Close();
             }
         }
 
@@ -187,38 +188,38 @@ public static class Storage
         {
             appState.Exceptions.Add("Server is not responding");
             appState.CancellationTokenSource.Cancel();
-            return;
+            return null;
         }
-        
-        var isConnected = appState.Client.Connect(appState.Settings.ServerConnection.ServerAddress, SMBTransportType.DirectTCPTransport, appState.Settings.ServerConnection.ResponseTimeoutMs);
-        var shares = new List<string>();
+
+        var client = new SMB2Client();
+        var isConnected = client.Connect(appState.Settings.ServerConnection.ServerAddress, SMBTransportType.DirectTCPTransport, appState.Settings.ServerConnection.ResponseTimeoutMs);
 
         if (isConnected)
         {
-            var status = appState.Client.Login(appState.Settings.ServerConnection.Domain, appState.Settings.ServerConnection.UserName, appState.Settings.ServerConnection.Password);
+            var status = client.Login(appState.Settings.ServerConnection.Domain, appState.Settings.ServerConnection.UserName, appState.Settings.ServerConnection.Password);
 
             if (status == NTStatus.STATUS_SUCCESS)
             {
-                shares = appState.Client.ListShares(out status);
-
-                if (status == NTStatus.STATUS_SUCCESS)
+                if (verifyShare)
                 {
-                    if (shares.Contains(appState.Settings.ServerConnection.ShareName, StringComparer.OrdinalIgnoreCase) == false)
+                    var shares = client.ListShares(out status);
+
+                    if (status == NTStatus.STATUS_SUCCESS)
                     {
-                        appState.Exceptions.Add("Network share not found on the server");
-                        appState.CancellationTokenSource.Cancel();
+                        if (shares.Contains(appState.Settings.ServerConnection.ShareName, StringComparer.OrdinalIgnoreCase) == false)
+                        {
+                            appState.Exceptions.Add("Network share not found on the server");
+                            appState.CancellationTokenSource.Cancel();
+                            return null;
+                        }
                     }
 
                     else
                     {
-                        EstablishFileStore(appState);
+                        appState.Exceptions.Add("Could not retrieve server shares list");
+                        appState.CancellationTokenSource.Cancel();
+                        return null;
                     }
-                }
-
-                else
-                {
-                    appState.Exceptions.Add("Could not retrieve server shares list");
-                    appState.CancellationTokenSource.Cancel();
                 }
             }
 
@@ -234,250 +235,262 @@ public static class Storage
             appState.Exceptions.Add("Could not connect to the server");
             appState.CancellationTokenSource.Cancel();
         }
+
+        if (appState.CancellationTokenSource.IsCancellationRequested == false)
+            return client;
         
-        if (appState.CancellationTokenSource.IsCancellationRequested)
-            Disconnect(appState);
+        DisconnectClient(client);
+
+        return null;
     }
 
-    public static void Disconnect(AppState appState)
+    public static void DisconnectClient(SMB2Client? client)
     {
-        if (appState.Client.IsConnected == false)
+        if (client is null || client.IsConnected == false)
             return;
 
         try
         {
-            appState.Client.Logoff();
+            client.Logoff();
         }
 
         finally
         {
-            appState.Client.Disconnect();
+            client.Disconnect();
         }
     }
 
-    public static void EstablishFileStore(AppState appState)
+    public static ISMBFileStore? GetFileStore(AppState appState, SMB2Client client)
     {
+        if (appState.CancellationTokenSource.IsCancellationRequested)
+            return null;
+
+        ISMBFileStore? fileStore = null;
         var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
 
         for (var attempt = 0; attempt < retries; attempt++)
         {
-            appState.FileStore = appState.Client.TreeConnect(appState.Settings.ServerConnection.ShareName, out var status);
+            fileStore = client.TreeConnect(appState.Settings.ServerConnection.ShareName, out var status);
 
             if (status == NTStatus.STATUS_SUCCESS)
                 break;
 
-            Task.Delay(appState.Settings.WriteRetryDelaySeconds * 1000).GetAwaiter();
+            Thread.Sleep(appState.Settings.WriteRetryDelaySeconds * 1000);
         }
 
-        if (appState.FileStore is not null)
-            return;
+        if (fileStore is not null)
+            return fileStore;
         
         appState.Exceptions.Add($"Could not connect to the file share `{appState.Settings.ServerConnection.ShareName}`");
         appState.CancellationTokenSource.Cancel();
-    }
-    
-    public static async ValueTask EnsureFileStoreAsync(AppState appState)
-    {
-        if (appState.CancellationTokenSource.IsCancellationRequested)
-            return;
 
-        var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
-
-        for (var attempt = 0; attempt < retries; attempt++)
-        {
-            appState.FileStore = appState.Client.TreeConnect(appState.Settings.ServerConnection.ShareName, out var status);
-
-            if (status == NTStatus.STATUS_SUCCESS)
-                break;
-
-            await Task.Delay(appState.Settings.WriteRetryDelaySeconds * 1000);
-        }
-
-        if (appState.FileStore is not null)
-            return;
-        
-        appState.Exceptions.Add($"Could not connect to the file share `{appState.Settings.ServerConnection.ShareName}`");
-        await appState.CancellationTokenSource.CancelAsync();
+        return null;
     }
     
     #endregion
     
     #region Server Storage
     
-    public static async ValueTask RecurseServerPathAsync(AppState appState, string path, bool includeHidden = false)
+    public static void RecurseServerPath(AppState appState, string path, bool includeHidden = false, int maxTasks = 8)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        var status = NTStatus.STATUS_SUCCESS;
+        var client = ConnectClient(appState);
         
-        if (appState.FileStore is null)
+        if (client is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
-        #region Segment Files And Folders
-
-        var files = new List<FileDirectoryInformation>();
-        var directories = new List<FileDirectoryInformation>();
-
-        status = appState.FileStore.CreateFile(out var fileFolderHandle, out _, path, AccessMask.GENERIC_READ, FileAttributes.Directory, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE, null);
-
-        if (status != NTStatus.STATUS_SUCCESS)
-        {
-            if (await ServerFolderExistsAsync(appState, path) == false)
-                return;
-        }
+        var fileStore = GetFileStore(appState, client);
         
-        status = appState.FileStore.QueryDirectory(out var fileFolderList, fileFolderHandle, "*", FileInformationClass.FileDirectoryInformation);
-
-        if (fileFolderHandle is not null)
-            status = appState.FileStore.CloseFile(fileFolderHandle);
-
-        if (status == NTStatus.STATUS_SUCCESS)
-        {
-            foreach (var item in fileFolderList)
-            {
-                if (appState.CancellationTokenSource.IsCancellationRequested)
-                    break;
-
-                var file = (FileDirectoryInformation)item;
-                
-                if (file.FileName is "." or "..")
-                    continue;
-
-                if (includeHidden == false && (file.FileAttributes & FileAttributes.Hidden) == FileAttributes.Hidden)
-                    continue;
-                
-                if ((file.FileAttributes & FileAttributes.Directory) == FileAttributes.Directory)
-                    directories.Add((FileDirectoryInformation)item);
-                else
-                    files.Add((FileDirectoryInformation)item);
-            }
-        }
-
-        else
-        {
-            appState.Exceptions.Add($"Cannot index server path `{path}`");
-            await appState.CancellationTokenSource.CancelAsync();
+        if (fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
-        }
 
-        #endregion
-        
-        #region Files
-        
-        foreach (var file in files)
+        if (maxTasks < 1)
+            maxTasks = 8;
+
+        try
         {
-            if (appState.CancellationTokenSource.IsCancellationRequested)
-                break;
-            
-            try
+            #region Segment Files And Folders
+
+            var files = new List<FileDirectoryInformation>();
+            var directories = new List<FileDirectoryInformation>();
+            var status = fileStore.CreateFile(out var fileFolderHandle, out _, path, AccessMask.GENERIC_READ,
+                FileAttributes.Directory, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN,
+                CreateOptions.FILE_DIRECTORY_FILE, null);
+
+            if (status != NTStatus.STATUS_SUCCESS)
             {
-                var filePath = $"{path}\\{file.FileName}";
-
-                var fo = new ServerFileObject(appState, filePath.Trim('\\'), file.LastWriteTime.ToFileTimeUtc(), file.EndOfFile, true, appState.Settings.Paths.RemoteRootPath);
-
-                if (FilePathShouldBeIgnoredDuringScan(appState, fo))
-                    continue;
-
-                appState.ServerFiles.Add(fo);
+                if (ServerFolderExists(appState, fileStore, path) == false)
+                    return;
             }
-            catch
+
+            status = fileStore.QueryDirectory(out var fileFolderList, fileFolderHandle, "*",
+                FileInformationClass.FileDirectoryInformation);
+
+            if (fileFolderHandle is not null)
+                status = fileStore.CloseFile(fileFolderHandle);
+
+            if (status == NTStatus.STATUS_SUCCESS)
             {
-                appState.Exceptions.Add($"Could process server file `{file.FileName}`");
-                await appState.CancellationTokenSource.CancelAsync();
+                foreach (var item in fileFolderList)
+                {
+                    if (appState.CancellationTokenSource.IsCancellationRequested)
+                        break;
+
+                    var file = (FileDirectoryInformation)item;
+
+                    if (file.FileName is "." or "..")
+                        continue;
+
+                    if (includeHidden == false &&
+                        (file.FileAttributes & FileAttributes.Hidden) == FileAttributes.Hidden)
+                        continue;
+
+                    if ((file.FileAttributes & FileAttributes.Directory) == FileAttributes.Directory)
+                        directories.Add(file);
+                    else
+                        files.Add(file);
+                }
+            }
+
+            else
+            {
+                appState.Exceptions.Add($"Cannot index server path `{path}`");
+                appState.CancellationTokenSource.Cancel();
                 return;
             }
-        }
 
-        #endregion
-        
-        #region Directories        
-        
-        foreach (var directory in directories)
-        {
-            if (appState.CancellationTokenSource.IsCancellationRequested)
-                break;
-            
-            try
+            #endregion
+
+            #region Files
+
+            if (files.Count > 0)
             {
-                var directoryPath = $"{path}\\{directory.FileName}";
+                Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = maxTasks }, (i, state) =>
+                {
+                    if (appState.CancellationTokenSource.IsCancellationRequested || state.ShouldExitCurrentIteration || state.IsStopped)
+                        return;
 
-                if (appState.CurrentSpinner is not null)
-                    appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.Text[..appState.CurrentSpinner.Text.IndexOf("...", StringComparison.Ordinal)]}... {directory.FileName}/...";
+                    var file = files[i];
 
-                var fo = new ServerFileObject(appState, directoryPath.Trim('\\'), directory.LastWriteTime.ToFileTimeUtc(), 0, false, appState.Settings.Paths.RemoteRootPath);
-                    
-                if (FolderPathShouldBeIgnoredDuringScan(appState, fo))
-                    continue;
-                
-                appState.ServerFiles.Add(fo);
-                
-                await RecurseServerPathAsync(appState, directoryPath);
+                    try
+                    {
+                        var filePath = $"{path}\\{file.FileName}";
+
+                        var fo = new ServerFileObject(appState, filePath.Trim('\\'), file.LastWriteTime.ToFileTimeUtc(),
+                            file.EndOfFile, true, appState.Settings.Paths.RemoteRootPath);
+
+                        if (FilePathShouldBeIgnoredDuringScan(appState, fo))
+                            return;
+
+                        appState.ServerFiles.Add(fo);
+                    }
+                    catch
+                    {
+                        appState.Exceptions.Add($"Could process server file `{file.FileName}`");
+                        appState.CancellationTokenSource.Cancel();
+                        state.Stop();
+                    }
+                });
             }
-            catch
-            {
-                appState.Exceptions.Add($"Could process server directory `{directory.FileName}`");
-                await appState.CancellationTokenSource.CancelAsync();
+
+            #endregion
+
+            #region Directories
+
+            if (directories.Count == 0)
                 return;
-            }
+
+            Parallel.For(0, directories.Count, new ParallelOptions { MaxDegreeOfParallelism = maxTasks }, (i, state) =>
+            {
+                if (appState.CancellationTokenSource.IsCancellationRequested || state.ShouldExitCurrentIteration || state.IsStopped)
+                    return;
+
+                var directory = directories[i];
+
+                try
+                {
+                    var directoryPath = $"{path}\\{directory.FileName}";
+
+                    var fo = new ServerFileObject(appState, directoryPath.Trim('\\'),
+                        directory.LastWriteTime.ToFileTimeUtc(), 0, false, appState.Settings.Paths.RemoteRootPath);
+
+                    if (FolderPathShouldBeIgnoredDuringScan(appState, fo))
+                        return;
+
+                    if (appState.CurrentSpinner is not null && i % 3 == 0)
+                        appState.CurrentSpinner.Text =
+                            $"{appState.CurrentSpinner.Text[..appState.CurrentSpinner.Text.IndexOf("...", StringComparison.Ordinal)]}... {directory.FileName}/...";
+
+                    appState.ServerFiles.Add(fo);
+
+                    RecurseServerPath(appState, directoryPath, includeHidden, maxTasks);
+                }
+                catch
+                {
+                    appState.Exceptions.Add($"Could process server directory `{directory.FileName}`");
+                    appState.CancellationTokenSource.Cancel();
+                    state.Stop();
+                }
+            });
+
+            #endregion
         }
-        
-        #endregion
+
+        finally
+        {
+            DisconnectClient(client);
+        }
     }
     
-    public static async ValueTask<bool> ServerFileExistsAsync(AppState appState, string serverFilePath)
+    public static bool ServerFileExists(AppState appState, ISMBFileStore? fileStore, string serverFilePath)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return false;
 
-        await EnsureFileStoreAsync(appState);
-
-        if (appState.FileStore is null)
+        if (fileStore is null)
             return false;
 
         serverFilePath = serverFilePath.FormatServerPath(appState);
         
-        var status = appState.FileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_READ | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.Read, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+        var status = fileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_READ | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.Read, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
 
         if (handle is not null)
-            appState.FileStore.CloseFile(handle);
+            fileStore.CloseFile(handle);
             
         return status == NTStatus.STATUS_SUCCESS;
     }
     
-    public static async ValueTask<bool> ServerFolderExistsAsync(AppState appState, string serverFolderPath)
+    public static bool ServerFolderExists(AppState appState, ISMBFileStore? fileStore, string serverFolderPath)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return false;
 
-        await EnsureFileStoreAsync(appState);
-
-        if (appState.FileStore is null)
+        if (fileStore is null)
             return false;
         
         serverFolderPath = serverFolderPath.FormatServerPath(appState);
         
-        var status = appState.FileStore.CreateFile(out var handle, out _, serverFolderPath, AccessMask.GENERIC_READ, FileAttributes.Directory, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE, null);
+        var status = fileStore.CreateFile(out var handle, out _, serverFolderPath, AccessMask.GENERIC_READ, FileAttributes.Directory, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE, null);
 
         if (handle is not null)
-            appState.FileStore.CloseFile(handle);
+            fileStore.CloseFile(handle);
 
         return status == NTStatus.STATUS_SUCCESS;
     }
 
-    public static async ValueTask EnsureServerPathExists(AppState appState, string serverFolderPath)
+    public static void EnsureServerPathExists(AppState appState, ISMBFileStore? fileStore, string serverFolderPath)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        await EnsureFileStoreAsync(appState);
-
-        if (appState.FileStore is null)
+        if (fileStore is null)
             return;
 
         serverFolderPath = serverFolderPath.FormatServerPath(appState);
 
-        if (await ServerFolderExistsAsync(appState, serverFolderPath))
+        if (ServerFolderExists(appState, fileStore, serverFolderPath))
             return;
 
         var segments = serverFolderPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
@@ -491,7 +504,7 @@ public static class Storage
             
             buildingPath += segment;
             
-            if (await ServerFolderExistsAsync(appState, buildingPath))
+            if (ServerFolderExists(appState, fileStore, buildingPath))
                 continue;
             
             var success = true;
@@ -502,10 +515,10 @@ public static class Storage
                 if (appState.CurrentSpinner is not null)
                     appState.CurrentSpinner.Text = $"{spinnerText} `{buildingPath}`...";
 
-                var status = appState.FileStore.CreateFile(out var handle, out _, buildingPath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_CREATE, CreateOptions.FILE_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+                var status = fileStore.CreateFile(out var handle, out _, buildingPath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_CREATE, CreateOptions.FILE_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
 
                 if (handle is not null)
-                    appState.FileStore.CloseFile(handle);
+                    fileStore.CloseFile(handle);
 
                 if (status is NTStatus.STATUS_SUCCESS or NTStatus.STATUS_OBJECT_NAME_COLLISION)
                 {
@@ -520,7 +533,7 @@ public static class Storage
                     if (appState.CurrentSpinner is not null)
                         appState.CurrentSpinner.Text = $"{spinnerText} `{buildingPath}`; Retry {attempt + 1} ({x:N0})...";
 
-                    await Task.Delay(1000);
+                    Thread.Sleep(1000);
                 }
             }
 
@@ -528,19 +541,17 @@ public static class Storage
                 continue;
             
             appState.Exceptions.Add($"Failed to create directory after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{buildingPath}`");
-            await appState.CancellationTokenSource.CancelAsync();
+            appState.CancellationTokenSource.Cancel();
             break;
         }
     }
     
-    public static async ValueTask DeleteServerFileAsync(AppState appState, FileObject sfo)
+    public static async ValueTask DeleteServerFileAsync(AppState appState, ISMBFileStore? fileStore, FileObject sfo)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        await EnsureFileStoreAsync(appState);
-
-        if (appState.FileStore is null)
+        if (fileStore is null)
             return;
 
         var success = true;
@@ -548,7 +559,7 @@ public static class Storage
         
         for (var attempt = 0; attempt < retries; attempt++)
         {
-            var status = appState.FileStore.CreateFile(out var handle, out _, sfo.AbsolutePath.TrimPath(), AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+            var status = fileStore.CreateFile(out var handle, out _, sfo.AbsolutePath.TrimPath(), AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
 
             if (status == NTStatus.STATUS_SUCCESS)
             {
@@ -557,12 +568,12 @@ public static class Storage
                     DeletePending = true
                 };
                 
-                status = appState.FileStore.SetFileInformation(handle, fileDispositionInformation);
+                status = fileStore.SetFileInformation(handle, fileDispositionInformation);
                 success = status == NTStatus.STATUS_SUCCESS;
             }
             else
             {
-                var fileExists = await ServerFileExistsAsync(appState, sfo.AbsolutePath.TrimPath());
+                var fileExists = ServerFileExists(appState, fileStore, sfo.AbsolutePath.TrimPath());
         
                 if (fileExists == false)
                     success = true;
@@ -571,7 +582,7 @@ public static class Storage
             }
 
             if (handle is not null)
-                appState.FileStore.CloseFile(handle);
+                fileStore.CloseFile(handle);
 
             if (success)
                 break;
@@ -596,14 +607,12 @@ public static class Storage
         }
     }
 
-    public static async ValueTask DeleteServerFolderAsync(AppState appState, FileObject sfo)
+    public static async ValueTask DeleteServerFolderAsync(AppState appState, ISMBFileStore? fileStore, FileObject sfo)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        await EnsureFileStoreAsync(appState);
-
-        if (appState.FileStore is null)
+        if (fileStore is null)
             return;
 
         var success = true;
@@ -611,7 +620,7 @@ public static class Storage
         
         for (var attempt = 0; attempt < retries; attempt++)
         {
-            var status = appState.FileStore.CreateFile(out var handle, out _, sfo.AbsolutePath.TrimPath(), AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+            var status = fileStore.CreateFile(out var handle, out _, sfo.AbsolutePath.TrimPath(), AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
 
             if (status == NTStatus.STATUS_SUCCESS)
             {
@@ -620,12 +629,12 @@ public static class Storage
                     DeletePending = true
                 };
                 
-                status = appState.FileStore.SetFileInformation(handle, fileDispositionInformation);
+                status = fileStore.SetFileInformation(handle, fileDispositionInformation);
                 success = status == NTStatus.STATUS_SUCCESS;
             }
             else
             {
-                var folderExists = await ServerFolderExistsAsync(appState, sfo.AbsolutePath.TrimPath());
+                var folderExists = ServerFolderExists(appState, fileStore, sfo.AbsolutePath.TrimPath());
 
                 if (folderExists == false)
                     success = true;
@@ -634,7 +643,7 @@ public static class Storage
             }
 
             if (handle is not null)
-                appState.FileStore.CloseFile(handle);
+                fileStore.CloseFile(handle);
 
             if (success)
                 break;
@@ -659,17 +668,15 @@ public static class Storage
         }
     }
 
-    public static async ValueTask DeleteServerFolderRecursiveAsync(AppState appState, FileObject sfo)
+    public static async ValueTask DeleteServerFolderRecursiveAsync(AppState appState, ISMBFileStore? fileStore, FileObject sfo)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        await EnsureFileStoreAsync(appState);
-
-        if (appState.FileStore is null)
+        if (fileStore is null)
             return;
 
-        var folderExists = await ServerFolderExistsAsync(appState, sfo.AbsolutePath.TrimPath());
+        var folderExists = ServerFolderExists(appState, fileStore, sfo.AbsolutePath.TrimPath());
         
         if (folderExists == false)
             return;
@@ -679,11 +686,13 @@ public static class Storage
 
         // Delete all files in the path
 
-        foreach (var file in appState.ServerFiles.ToList().Where(f => f.IsFile && f.AbsolutePath.StartsWith(sfo.AbsolutePath)))
-        {
-            await DeleteServerFileAsync(appState, file);
+        var list = appState.ServerFiles.ToList();
 
-            appState.ServerFiles.Remove(file);
+        foreach (var file in list.ToList().Where(f => f.IsFile && f.AbsolutePath.StartsWith(sfo.AbsolutePath)))
+        {
+            await DeleteServerFileAsync(appState, fileStore, file);
+
+            list.Remove(file);
         }
 
         if (appState.CancellationTokenSource.IsCancellationRequested)
@@ -691,27 +700,27 @@ public static class Storage
         
         // Delete subfolders by level
 
-        foreach (var folder in appState.ServerFiles.ToList().Where(f => f.IsFolder && f.AbsolutePath.StartsWith(sfo.AbsolutePath)).OrderByDescending(o => o.Level))
+        foreach (var folder in list.ToList().Where(f => f.IsFolder && f.AbsolutePath.StartsWith(sfo.AbsolutePath)).OrderByDescending(o => o.Level))
         {
-            await DeleteServerFolderAsync(appState, folder);
+            await DeleteServerFolderAsync(appState, fileStore, folder);
 
-            appState.ServerFiles.Remove(folder);
+            list.Remove(folder);
         }
+        
+        appState.ServerFiles = new ConcurrentBag<ServerFileObject>(list);
     }
     
-    public static async ValueTask CopyFileAsync(AppState appState, LocalFileObject fo)
+    public static async ValueTask CopyFileAsync(AppState appState, ISMBFileStore? fileStore, LocalFileObject fo)
     {
-        await CopyFileAsync(appState, fo.AbsolutePath, fo.AbsoluteServerPath, fo.LastWriteTime);
+        await CopyFileAsync(appState, fileStore, fo.AbsolutePath, fo.AbsoluteServerPath, fo.LastWriteTime);
     }
 
-    public static async ValueTask CopyFileAsync(AppState appState, string localFilePath, string serverFilePath, long fileTime = -1, long fileSizeBytes = -1)
+    public static async ValueTask CopyFileAsync(AppState appState, ISMBFileStore? fileStore, string localFilePath, string serverFilePath, long fileTime = -1, long fileSizeBytes = -1)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
-        await EnsureFileStoreAsync(appState);
-
-        if (appState.FileStore is null)
+        if (fileStore is null)
             return;
 
         localFilePath = localFilePath.FormatLocalPath(appState);
@@ -730,7 +739,7 @@ public static class Storage
         
         serverFilePath = serverFilePath.FormatServerPath(appState);
         
-        await EnsureServerPathExists(appState, serverFilePath.TrimEnd(serverFilePath.GetLastPathSegment()).TrimPath());
+        EnsureServerPathExists(appState, fileStore, serverFilePath.TrimEnd(serverFilePath.GetLastPathSegment()).TrimPath());
 
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -748,15 +757,15 @@ public static class Storage
             var localFileStream = new FileStream(localFilePath, FileMode.Open, FileAccess.Read);
             var success = true;
             var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
-            var fileExists = await ServerFileExistsAsync(appState, serverFilePath);
+            var fileExists = ServerFileExists(appState, fileStore, serverFilePath);
             
             for (var attempt = 0; attempt < retries; attempt++)
             {
-                var status = appState.FileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, fileExists ? CreateDisposition.FILE_OVERWRITE : CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+                var status = fileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, fileExists ? CreateDisposition.FILE_OVERWRITE : CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
                     
                 if (status == NTStatus.STATUS_SUCCESS)
                 {
-                    var maxWriteSize = (int)appState.Client.MaxWriteSize;
+                    var maxWriteSize = (int)fileStore.MaxWriteSize;
                     var writeOffset = 0;
                         
                     while (localFileStream.Position < localFileStream.Length)
@@ -769,7 +778,7 @@ public static class Storage
                             Array.Resize(ref buffer, bytesRead);
                         }
                             
-                        status = appState.FileStore.WriteFile(out _, handle, writeOffset, buffer);
+                        status = fileStore.WriteFile(out _, handle, writeOffset, buffer);
 
                         if (status != NTStatus.STATUS_SUCCESS)
                         {
@@ -788,7 +797,7 @@ public static class Storage
                 }
 
                 if (handle is not null)
-                    appState.FileStore.CloseFile(handle);
+                    fileStore.CloseFile(handle);
 
                 if (success)
                     break;
@@ -809,7 +818,7 @@ public static class Storage
                 return;
             }
             
-            await ChangeModifyDateAsync(appState, serverFilePath, fileTime);
+            await ChangeModifyDateAsync(appState, fileStore, serverFilePath, fileTime);
         }
         catch
         {
@@ -818,24 +827,22 @@ public static class Storage
         }
     }
     
-    public static async ValueTask ChangeModifyDateAsync(AppState appState, LocalFileObject fo)
-{
-    await ChangeModifyDateAsync(appState, fo.AbsoluteServerPath, fo.LastWriteTime);
-}    
+    public static async ValueTask ChangeModifyDateAsync(AppState appState, ISMBFileStore? fileStore, LocalFileObject fo)
+    {
+        await ChangeModifyDateAsync(appState, fileStore, fo.AbsoluteServerPath, fo.LastWriteTime);
+    }    
 
-    public static async ValueTask ChangeModifyDateAsync(AppState appState, string serverFilePath, long fileTime)
+    public static async ValueTask ChangeModifyDateAsync(AppState appState, ISMBFileStore? fileStore, string serverFilePath, long fileTime)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
-        await EnsureFileStoreAsync(appState);
-
-        if (appState.FileStore is null)
+        if (fileStore is null)
             return;
 
         serverFilePath = serverFilePath.FormatServerPath(appState);
         
-        var status = appState.FileStore.CreateFile(out var handle, out _, serverFilePath, (AccessMask)FileAccessMask.FILE_WRITE_ATTRIBUTES, 0, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, 0, null);
+        var status = fileStore.CreateFile(out var handle, out _, serverFilePath, (AccessMask)FileAccessMask.FILE_WRITE_ATTRIBUTES, 0, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, 0, null);
 
         if (status == NTStatus.STATUS_SUCCESS)
         {
@@ -844,7 +851,7 @@ public static class Storage
                 LastWriteTime = DateTime.FromFileTimeUtc(fileTime)
             };
 
-            status = appState.FileStore.SetFileInformation(handle, basicInfo);
+            status = fileStore.SetFileInformation(handle, basicInfo);
 
             if (status != NTStatus.STATUS_SUCCESS)
             {
@@ -859,21 +866,19 @@ public static class Storage
         }
         
         if (handle is not null)
-            appState.FileStore.CloseFile(handle);
+            fileStore.CloseFile(handle);
     }    
 
     #endregion
     
     #region Offline Support
     
-    public static async ValueTask CreateOfflineFileAsync(AppState appState)
+    public static async ValueTask CreateOfflineFileAsync(AppState appState, ISMBFileStore? fileStore)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
-        await EnsureFileStoreAsync(appState);
-
-        if (appState.FileStore is null)
+        if (fileStore is null)
             return;
 
         var serverFilePath = $"{appState.Settings.Paths.RemoteRootPath}/app_offline.htm".FormatServerPath(appState);
@@ -882,31 +887,30 @@ public static class Storage
         {
             var success = true;
             var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
-            var fileExists = await ServerFileExistsAsync(appState, serverFilePath);
+            var fileExists = ServerFileExists(appState, fileStore, serverFilePath);
             var spinnerText = appState.CurrentSpinner?.Text ?? string.Empty;
             
             for (var attempt = 0; attempt < retries; attempt++)
             {
-                var status = appState.FileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, fileExists ? CreateDisposition.FILE_OVERWRITE : CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+                var status = fileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, fileExists ? CreateDisposition.FILE_OVERWRITE : CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
                     
                 if (status == NTStatus.STATUS_SUCCESS)
                 {
-                    var numberOfBytesWritten = 0;
                     var data = Encoding.UTF8.GetBytes(appState.AppOfflineMarkup);
 
-                    status = appState.FileStore.WriteFile(out numberOfBytesWritten, handle, 0, data);
-                    
+                    status = fileStore.WriteFile(out var numberOfBytesWritten, handle, 0, data);
+
                     if (status != NTStatus.STATUS_SUCCESS)
-                    {
-                        throw new Exception("Failed to write to file");
-                    }                    
+                        success = false;
+                    else
+                        success = true;
                     
                     if (appState.CurrentSpinner is not null)
                         appState.CurrentSpinner.Text = $"{spinnerText} ({numberOfBytesWritten.FormatBytes()})...";
                 }
 
                 if (handle is not null)
-                    appState.FileStore.CloseFile(handle);
+                    fileStore.CloseFile(handle);
 
                 if (success)
                     break;
@@ -933,14 +937,12 @@ public static class Storage
         }
     }
     
-    public static async ValueTask DeleteOfflineFileAsync(AppState appState)
+    public static async ValueTask DeleteOfflineFileAsync(AppState appState, ISMBFileStore? fileStore)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        await EnsureFileStoreAsync(appState);
-
-        if (appState.FileStore is null)
+        if (fileStore is null)
             return;
 
         var serverFilePath = $"{appState.Settings.Paths.RemoteRootPath}/app_offline.htm".FormatServerPath(appState);
@@ -949,7 +951,7 @@ public static class Storage
         
         for (var attempt = 0; attempt < retries; attempt++)
         {
-            var status = appState.FileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+            var status = fileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
 
             if (status == NTStatus.STATUS_SUCCESS)
             {
@@ -958,12 +960,12 @@ public static class Storage
                     DeletePending = true
                 };
                 
-                status = appState.FileStore.SetFileInformation(handle, fileDispositionInformation);
+                status = fileStore.SetFileInformation(handle, fileDispositionInformation);
                 success = status == NTStatus.STATUS_SUCCESS;
             }
             else
             {
-                var fileExists = await ServerFileExistsAsync(appState, serverFilePath);
+                var fileExists = ServerFileExists(appState, fileStore, serverFilePath);
         
                 if (fileExists == false)
                     success = true;
@@ -972,7 +974,7 @@ public static class Storage
             }
 
             if (handle is not null)
-                appState.FileStore.CloseFile(handle);
+                fileStore.CloseFile(handle);
 
             if (success)
                 break;

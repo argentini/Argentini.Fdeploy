@@ -15,8 +15,6 @@ internal class Program
 
         await runner.DeployAsync();
         
-        Storage.Disconnect(runner.AppState);
-
         if (runner.AppState.CancellationTokenSource.IsCancellationRequested)
         {
             await runner.OutputExceptionsAsync();
