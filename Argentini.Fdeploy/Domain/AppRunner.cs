@@ -450,8 +450,7 @@ public sealed class AppRunner
                     
                     Timer.Restart();
 
-                    var itemsToDelete = AppState.ServerFiles.Except(AppState.LocalFiles, new FileObjectComparer())
-                        .ToList();
+                    var itemsToDelete = AppState.ServerFiles.Except(AppState.LocalFiles, new FileObjectComparer()).Where(f => f.IsDeleted == false).ToList();
 
                     // Remove paths that enclose ignore paths
                     foreach (var item in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
@@ -542,8 +541,7 @@ public sealed class AppRunner
 
                     foreach (var file in filesToCopy)
                     {
-                        var serverFile = AppState.ServerFiles.FirstOrDefault(f =>
-                            f.RelativeComparablePath == file.RelativeComparablePath);
+                        var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == file.RelativeComparablePath && f.IsDeleted == false);
 
                         if (serverFile is not null && serverFile.LastWriteTime == file.LastWriteTime && serverFile.FileSizeBytes == file.FileSizeBytes)
                             continue;
@@ -675,11 +673,9 @@ public sealed class AppRunner
 
                     foreach (var fo in itemsToCopy)
                     {
-                        var serverFile = AppState.ServerFiles.FirstOrDefault(f =>
-                            f.RelativeComparablePath == fo.RelativeComparablePath);
+                        var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == fo.RelativeComparablePath && f.IsDeleted == false);
 
-                        if (serverFile is not null && serverFile.LastWriteTime == fo.LastWriteTime &&
-                            serverFile.FileSizeBytes == fo.FileSizeBytes)
+                        if (serverFile is not null && serverFile.LastWriteTime == fo.LastWriteTime && serverFile.FileSizeBytes == fo.FileSizeBytes)
                             continue;
 
                         await Storage.CopyFileAsync(AppState, fileStore, fo);

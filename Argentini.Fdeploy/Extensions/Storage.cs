@@ -551,7 +551,7 @@ public static class Storage
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        if (fileStore is null)
+        if (fileStore is null || sfo.IsDeleted)
             return;
 
         var success = true;
@@ -605,6 +605,10 @@ public static class Storage
             appState.Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{sfo.AbsolutePath}`");
             await appState.CancellationTokenSource.CancelAsync();
         }
+        else
+        {
+            sfo.IsDeleted = true;
+        }
     }
 
     public static async ValueTask DeleteServerFolderAsync(AppState appState, ISMBFileStore? fileStore, FileObject sfo)
@@ -612,7 +616,7 @@ public static class Storage
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        if (fileStore is null)
+        if (fileStore is null || sfo.IsDeleted)
             return;
 
         var success = true;
@@ -666,6 +670,10 @@ public static class Storage
             appState.Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{sfo.AbsolutePath}`");
             await appState.CancellationTokenSource.CancelAsync();
         }
+        else
+        {
+            sfo.IsDeleted = true;
+        }
     }
 
     public static async ValueTask DeleteServerFolderRecursiveAsync(AppState appState, ISMBFileStore? fileStore, FileObject sfo)
@@ -686,13 +694,9 @@ public static class Storage
 
         // Delete all files in the path
 
-        var list = appState.ServerFiles.ToList();
-
-        foreach (var file in list.ToList().Where(f => f.IsFile && f.AbsolutePath.StartsWith(sfo.AbsolutePath)))
+        foreach (var file in appState.ServerFiles.ToList().Where(f => f is { IsFile: true, IsDeleted: false } && f.AbsolutePath.StartsWith(sfo.AbsolutePath)))
         {
             await DeleteServerFileAsync(appState, fileStore, file);
-
-            list.Remove(file);
         }
 
         if (appState.CancellationTokenSource.IsCancellationRequested)
@@ -700,14 +704,10 @@ public static class Storage
         
         // Delete subfolders by level
 
-        foreach (var folder in list.ToList().Where(f => f.IsFolder && f.AbsolutePath.StartsWith(sfo.AbsolutePath)).OrderByDescending(o => o.Level))
+        foreach (var folder in appState.ServerFiles.ToList().Where(f => f is { IsFolder: true, IsDeleted: false } && f.AbsolutePath.StartsWith(sfo.AbsolutePath)).OrderByDescending(o => o.Level))
         {
             await DeleteServerFolderAsync(appState, fileStore, folder);
-
-            list.Remove(folder);
         }
-        
-        appState.ServerFiles = new ConcurrentBag<ServerFileObject>(list);
     }
     
     public static async ValueTask CopyFileAsync(AppState appState, ISMBFileStore? fileStore, LocalFileObject fo)
