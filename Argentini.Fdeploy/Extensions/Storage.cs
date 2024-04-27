@@ -51,6 +51,40 @@ public static class Storage
         }
     }
 
+    public static async ValueTask CopyFolderAsync(string localSourcePath, string localDestinationPath)
+    {
+        // Get the subdirectories for the specified directory.
+        var dir = new DirectoryInfo(localSourcePath);
+
+        if (dir.Exists == false)
+        {
+            throw new DirectoryNotFoundException(
+                "Source directory does not exist or could not be found: "
+                + localSourcePath);
+        }
+
+        var dirs = dir.GetDirectories();
+    
+        // If the destination directory doesn't exist, create it.       
+        Directory.CreateDirectory(localDestinationPath);        
+
+        // Get the files in the directory and copy them to the new location.
+        var files = dir.GetFiles();
+        
+        foreach (var file in files)
+        {
+            var tempPath = Path.Combine(localDestinationPath, file.Name);
+            file.CopyTo(tempPath, false);
+        }
+
+        // If copying subdirectories, copy them and their contents to new location.
+        foreach (var subdir in dirs)
+        {
+            var tempPath = Path.Combine(localDestinationPath, subdir.Name);
+            await CopyFolderAsync(subdir.FullName, tempPath);
+        }
+    }
+    
     #endregion
     
     #region Ignore Rules
