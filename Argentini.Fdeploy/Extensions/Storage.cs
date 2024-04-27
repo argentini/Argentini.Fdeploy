@@ -51,22 +51,34 @@ public static class Storage
         }
     }
 
-    public static async ValueTask CopyFolderAsync(string localSourcePath, string localDestinationPath)
+    public static async Task CopyFolderAsync(AppState appState, string localSourcePath, string localDestinationPath, int maxTasks = 2)
     {
+        if (maxTasks < 1)
+            maxTasks = 2;
+
         // Get the subdirectories for the specified directory.
         var dir = new DirectoryInfo(localSourcePath);
 
         if (dir.Exists == false)
         {
-            throw new DirectoryNotFoundException(
-                "Source directory does not exist or could not be found: "
-                + localSourcePath);
+            appState.Exceptions.Add($"Could find source folder (copy folder) `{localSourcePath}`");
+            await appState.CancellationTokenSource.CancelAsync();
+            return;
         }
 
         var dirs = dir.GetDirectories();
-    
-        // If the destination directory doesn't exist, create it.       
-        Directory.CreateDirectory(localDestinationPath);        
+
+        try
+        {
+            // If the destination directory doesn't exist, create it.       
+            Directory.CreateDirectory(localDestinationPath);
+        }
+        catch
+        {
+            appState.Exceptions.Add($"Could not create local folder `{localDestinationPath}`");
+            await appState.CancellationTokenSource.CancelAsync();
+            return;
+        }
 
         // Get the files in the directory and copy them to the new location.
         var files = dir.GetFiles();
@@ -74,15 +86,42 @@ public static class Storage
         foreach (var file in files)
         {
             var tempPath = Path.Combine(localDestinationPath, file.Name);
-            file.CopyTo(tempPath, false);
+
+            try
+            {
+                file.CopyTo(tempPath, true);
+            }
+            catch
+            {
+                appState.Exceptions.Add($"Could not copy local file `{tempPath}`");
+                await appState.CancellationTokenSource.CancelAsync();
+                return;
+            }
+
+            if (appState.CancellationTokenSource.IsCancellationRequested)
+                break;
         }
 
-        // If copying subdirectories, copy them and their contents to new location.
+        var tasks = new List<Task>();
+        var limit = 0;
+        
         foreach (var subdir in dirs)
         {
-            var tempPath = Path.Combine(localDestinationPath, subdir.Name);
-            await CopyFolderAsync(subdir.FullName, tempPath);
+            limit++;
+            tasks.Add(CopyFolderAsync(appState, subdir.FullName, Path.Combine(localDestinationPath, subdir.Name), maxTasks));
+            
+            if (limit % maxTasks == limit / maxTasks)
+            {
+                if (appState.CancellationTokenSource.IsCancellationRequested == false)
+                    await Task.WhenAll(tasks);
+            }
+            
+            if (appState.CancellationTokenSource.IsCancellationRequested)
+                break;
         }
+        
+        if (appState.CancellationTokenSource.IsCancellationRequested == false)
+            await Task.WhenAll(tasks);
     }
     
     #endregion
