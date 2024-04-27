@@ -314,87 +314,115 @@ public static class Storage
         if (appState.FileStore is null)
             return;
 
-        status = appState.FileStore.CreateFile(out var handle, out _, path, AccessMask.GENERIC_READ, FileAttributes.Directory, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE, null);
+        #region Segment Files And Folders
+
+        var files = new List<FileDirectoryInformation>();
+        var directories = new List<FileDirectoryInformation>();
+
+        status = appState.FileStore.CreateFile(out var fileFolderHandle, out _, path, AccessMask.GENERIC_READ, FileAttributes.Directory, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE, null);
 
         if (status != NTStatus.STATUS_SUCCESS)
         {
             if (await ServerFolderExistsAsync(appState, path) == false)
                 return;
         }
+        
+        status = appState.FileStore.QueryDirectory(out var fileFolderList, fileFolderHandle, "*", FileInformationClass.FileDirectoryInformation);
+
+        if (fileFolderHandle is not null)
+            status = appState.FileStore.CloseFile(fileFolderHandle);
 
         if (status == NTStatus.STATUS_SUCCESS)
         {
-            status = appState.FileStore.QueryDirectory(out var fileList, handle, "*", FileInformationClass.FileDirectoryInformation);
-
-            if (handle is not null)
-                status = appState.FileStore.CloseFile(handle);
-
-            if (status == NTStatus.STATUS_SUCCESS)
+            foreach (var item in fileFolderList)
             {
-                foreach (var item in fileList)
-                {
-                    if (appState.CancellationTokenSource.IsCancellationRequested)
-                        break;
-                    
-                    FileDirectoryInformation? file = null;
+                if (appState.CancellationTokenSource.IsCancellationRequested)
+                    break;
 
-                    try
-                    {
-                        file = (FileDirectoryInformation)item;
-                        
-                        if (file.FileName is "." or "..")
-                            continue;
+                var file = (FileDirectoryInformation)item;
+                
+                if (file.FileName is "." or "..")
+                    continue;
 
-                        var filePath = $"{path}\\{file.FileName}";
-
-                        if (includeHidden == false && (file.FileAttributes & FileAttributes.Hidden) == FileAttributes.Hidden)
-                            continue;
-                        
-                        var isDirectory = (file.FileAttributes & FileAttributes.Directory) == FileAttributes.Directory;
-                        
-                        if (isDirectory)
-                        {
-                            if (appState.CurrentSpinner is not null)
-                                appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.Text[..appState.CurrentSpinner.Text.IndexOf("...", StringComparison.Ordinal)]}... {file.FileName}/...";
-
-                            var fo = new ServerFileObject(appState, filePath.Trim('\\'), file.LastWriteTime.ToFileTimeUtc(), 0, false, appState.Settings.Paths.RemoteRootPath);
-                                
-                            if (FolderPathShouldBeIgnoredDuringScan(appState, fo))
-                                continue;
-                            
-                            appState.ServerFiles.Add(fo);
-                            
-                            await RecurseServerPathAsync(appState, filePath);
-                        }
-
-                        else
-                        {
-                            var fo = new ServerFileObject(appState, filePath.Trim('\\'), file.LastWriteTime.ToFileTimeUtc(), file.EndOfFile, true, appState.Settings.Paths.RemoteRootPath);
-
-                            if (FilePathShouldBeIgnoredDuringScan(appState, fo))
-                                continue;
-
-                            appState.ServerFiles.Add(fo);
-                        }
-                    }
-                    catch
-                    {
-                        appState.Exceptions.Add($"Could process server file `{(file is null ? item.ToString() : file.FileName)}`");
-                        await appState.CancellationTokenSource.CancelAsync();
-                    }
-                }
-            }
-            else
-            {
-                appState.Exceptions.Add($"Could not read the contents of server path `{path}`");
-                await appState.CancellationTokenSource.CancelAsync();
+                if (includeHidden == false && (file.FileAttributes & FileAttributes.Hidden) == FileAttributes.Hidden)
+                    continue;
+                
+                if ((file.FileAttributes & FileAttributes.Directory) == FileAttributes.Directory)
+                    directories.Add((FileDirectoryInformation)item);
+                else
+                    files.Add((FileDirectoryInformation)item);
             }
         }
+
         else
         {
-            appState.Exceptions.Add($"Cannot write to server path `{path}`");
+            appState.Exceptions.Add($"Cannot index server path `{path}`");
             await appState.CancellationTokenSource.CancelAsync();
+            return;
         }
+
+        #endregion
+        
+        #region Files
+        
+        foreach (var file in files)
+        {
+            if (appState.CancellationTokenSource.IsCancellationRequested)
+                break;
+            
+            try
+            {
+                var filePath = $"{path}\\{file.FileName}";
+
+                var fo = new ServerFileObject(appState, filePath.Trim('\\'), file.LastWriteTime.ToFileTimeUtc(), file.EndOfFile, true, appState.Settings.Paths.RemoteRootPath);
+
+                if (FilePathShouldBeIgnoredDuringScan(appState, fo))
+                    continue;
+
+                appState.ServerFiles.Add(fo);
+            }
+            catch
+            {
+                appState.Exceptions.Add($"Could process server file `{file.FileName}`");
+                await appState.CancellationTokenSource.CancelAsync();
+                return;
+            }
+        }
+
+        #endregion
+        
+        #region Directories        
+        
+        foreach (var directory in directories)
+        {
+            if (appState.CancellationTokenSource.IsCancellationRequested)
+                break;
+            
+            try
+            {
+                var directoryPath = $"{path}\\{directory.FileName}";
+
+                if (appState.CurrentSpinner is not null)
+                    appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.Text[..appState.CurrentSpinner.Text.IndexOf("...", StringComparison.Ordinal)]}... {directory.FileName}/...";
+
+                var fo = new ServerFileObject(appState, directoryPath.Trim('\\'), directory.LastWriteTime.ToFileTimeUtc(), 0, false, appState.Settings.Paths.RemoteRootPath);
+                    
+                if (FolderPathShouldBeIgnoredDuringScan(appState, fo))
+                    continue;
+                
+                appState.ServerFiles.Add(fo);
+                
+                await RecurseServerPathAsync(appState, directoryPath);
+            }
+            catch
+            {
+                appState.Exceptions.Add($"Could process server directory `{directory.FileName}`");
+                await appState.CancellationTokenSource.CancelAsync();
+                return;
+            }
+        }
+        
+        #endregion
     }
     
     public static async ValueTask<bool> ServerFileExistsAsync(AppState appState, string serverFilePath)
