@@ -135,8 +135,8 @@ public sealed class AppRunner
         AppState.Settings.Paths.CopyFilesToPublishFolder.NormalizePaths();
         AppState.Settings.Paths.CopyFoldersToPublishFolder.NormalizePaths();
 
-        AppState.Settings.Paths.PreDeploymentFilePaths.NormalizePaths();
-        AppState.Settings.Paths.PreDeploymentFolderPaths.NormalizePaths();
+        AppState.Settings.Paths.SafeCopyFilePaths.NormalizePaths();
+        AppState.Settings.Paths.SafeCopyFolderPaths.NormalizePaths();
 
         AppState.Settings.Paths.IgnoreFilePaths.NormalizePaths();
         AppState.Settings.Paths.IgnoreFolderPaths.NormalizePaths();
@@ -422,7 +422,7 @@ public sealed class AppRunner
                 }
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested == false)
-                    spinner.Text = $"{spinnerText} {AppState.Settings.Paths.PreDeploymentFilePaths.Count:N0} file{(AppState.Settings.Paths.PreDeploymentFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                    spinner.Text = $"{spinnerText} {AppState.Settings.Paths.SafeCopyFilePaths.Count:N0} file{(AppState.Settings.Paths.SafeCopyFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
 
             }, Patterns.Dots, Patterns.Line);
 
@@ -465,7 +465,7 @@ public sealed class AppRunner
                 }
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested == false)
-                    spinner.Text = $"{spinnerText} {AppState.Settings.Paths.PreDeploymentFilePaths.Count:N0} folder{(AppState.Settings.Paths.PreDeploymentFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                    spinner.Text = $"{spinnerText} {AppState.Settings.Paths.SafeCopyFilePaths.Count:N0} folder{(AppState.Settings.Paths.SafeCopyFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
 
             }, Patterns.Dots, Patterns.Line);
 
@@ -601,11 +601,11 @@ public sealed class AppRunner
 
             #endregion
 
-            #region Copy Pre-Deployment Folders
+            #region Deploy Safe Copy Folders
 
-            if (AppState.Settings.Paths.PreDeploymentFolderPaths.Count != 0)
+            if (AppState.Settings.Paths.SafeCopyFolderPaths.Count != 0)
             {
-                await Spinner.StartAsync("Copying pre-deployment folders...", async spinner =>
+                await Spinner.StartAsync("Deploying safe copy folders...", async spinner =>
                 {
                     var spinnerText = spinner.Text;
                     var foldersToCreate = new List<string>();
@@ -614,7 +614,7 @@ public sealed class AppRunner
 
                     Timer.Restart();
                     
-                    foreach (var folder in AppState.LocalFiles.ToList().Where(f => f is { IsFolder: true, IsPreDeployment: true }))
+                    foreach (var folder in AppState.LocalFiles.ToList().Where(f => f is { IsFolder: true, IsSafeCopy: true }))
                     {
                         if (AppState.ServerFiles.Any(f => f.IsFolder && f.RelativeComparablePath == folder.RelativeComparablePath) == false)
                             foldersToCreate.Add($"{AppState.Settings.Paths.RemoteRootPath.SetSmbPathSeparators().TrimPath()}\\{folder.RelativeComparablePath.SetSmbPathSeparators().TrimPath()}");
@@ -638,7 +638,7 @@ public sealed class AppRunner
                         return;
                     }
 
-                    var filesToCopy = AppState.LocalFiles.ToList().Where(f => f is { IsFile: true, IsPreDeployment: true }).ToList();
+                    var filesToCopy = AppState.LocalFiles.ToList().Where(f => f is { IsFile: true, IsSafeCopy: true }).ToList();
                     var filesCopied = 0;
 
                     foreach (var file in filesToCopy)
@@ -673,11 +673,11 @@ public sealed class AppRunner
 
             #endregion
 
-            #region Copy Pre-Deployment Files
+            #region Deploy Safe Copy Files
 
-            if (AppState.Settings.Paths.PreDeploymentFilePaths.Count != 0)
+            if (AppState.Settings.Paths.SafeCopyFilePaths.Count != 0)
             {
-                await Spinner.StartAsync("Copying pre-deployment files...", async spinner =>
+                await Spinner.StartAsync("Deploying safe copy files...", async spinner =>
                 {
                     AppState.CurrentSpinner = spinner;
 
@@ -690,7 +690,7 @@ public sealed class AppRunner
 
                     var spinnerText = spinner.Text;
 
-                    foreach (var item in AppState.Settings.Paths.PreDeploymentFilePaths)
+                    foreach (var item in AppState.Settings.Paths.SafeCopyFilePaths)
                     {
                         var localFile = AppState.LocalFiles.FirstOrDefault(f => f.RelativeComparablePath == item && f.IsDeleted == false);
 
@@ -713,7 +713,7 @@ public sealed class AppRunner
                     if (AppState.CancellationTokenSource.IsCancellationRequested)
                         spinner.Fail($"{spinnerText} Failed!");
                     else
-                        spinner.Text = $"{spinnerText} {AppState.Settings.Paths.PreDeploymentFilePaths.Count:N0} file{(AppState.Settings.Paths.PreDeploymentFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                        spinner.Text = $"{spinnerText} {AppState.Settings.Paths.SafeCopyFilePaths.Count:N0} file{(AppState.Settings.Paths.SafeCopyFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
 
                 }, Patterns.Dots, Patterns.Line);
 
@@ -761,7 +761,7 @@ public sealed class AppRunner
 
             Timer.Restart();
             
-            var itemsToCopy = AppState.LocalFiles.Where(f => f is { IsFile: true, IsPreDeployment: false }).ToList();
+            var itemsToCopy = AppState.LocalFiles.Where(f => f is { IsFile: true, IsSafeCopy: false }).ToList();
             var itemCount = itemsToCopy.Count;
 
             await Spinner.StartAsync("Deploy files...", async spinner =>

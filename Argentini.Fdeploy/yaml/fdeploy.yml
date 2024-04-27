@@ -70,15 +70,15 @@ Paths:
 
     # Paths to folders that can be copied while the server is running;
     # folders are copied before the server is taken offline which shortens server downtime;
-    PreDeploymentFolderPaths:
+    SafeCopyFolderPaths:
 
         - "wwwroot"
 
     # Paths to files that can be copied while the server is running;
     # files are copied before the server is taken offline which shortens server downtime;
-    PreDeploymentFilePaths:
+    SafeCopyFilePaths:
 
-        - "test/TestUmbraco.sqlite.db"
+        - "test/backup.sqlite.db"
 
     # Ignore the following relative file paths
     IgnoreFilePaths:

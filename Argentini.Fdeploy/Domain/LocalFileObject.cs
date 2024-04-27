@@ -2,7 +2,7 @@ namespace Argentini.Fdeploy.Domain;
 
 public sealed class LocalFileObject : FileObject
 {
-    public bool IsPreDeployment { get; }
+    public bool IsSafeCopy { get; }
     public string AbsoluteServerPath { get; }
 
     public LocalFileObject(AppState appState, string absolutePath, long lastWriteTime, long fileSizeBytes, bool isFile, string rootPath)
@@ -21,21 +21,21 @@ public sealed class LocalFileObject : FileObject
 
         AbsoluteServerPath = $"{appState.Settings.Paths.RemoteRootPath}\\{RelativeComparablePath}".FormatServerPath(appState);
  
-        foreach (var staticFolderPath in appState.Settings.Paths.PreDeploymentFolderPaths)
+        foreach (var staticFolderPath in appState.Settings.Paths.SafeCopyFolderPaths)
         {
             if (RelativeComparablePath.StartsWith(staticFolderPath) == false)
                 continue;
 
-            IsPreDeployment = true;
+            IsSafeCopy = true;
             return;
         }
         
-        foreach (var staticFilePath in appState.Settings.Paths.PreDeploymentFilePaths)
+        foreach (var staticFilePath in appState.Settings.Paths.SafeCopyFilePaths)
         {
             if (RelativeComparablePath != staticFilePath)
                 continue;
 
-            IsPreDeployment = true;
+            IsSafeCopy = true;
             return;
         }
     }

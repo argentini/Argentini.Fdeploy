@@ -185,54 +185,63 @@ public static class Storage
         }
 
         var client = new SMB2Client();
-        var isConnected = client.Connect(appState.Settings.ServerConnection.ServerAddress, SMBTransportType.DirectTCPTransport, appState.Settings.ServerConnection.ResponseTimeoutMs);
 
-        if (isConnected)
+        try
         {
-            var status = client.Login(appState.Settings.ServerConnection.Domain, appState.Settings.ServerConnection.UserName, appState.Settings.ServerConnection.Password);
+            var isConnected = client.Connect(appState.Settings.ServerConnection.ServerAddress, SMBTransportType.DirectTCPTransport, appState.Settings.ServerConnection.ResponseTimeoutMs);
 
-            if (status == NTStatus.STATUS_SUCCESS)
+            if (isConnected)
             {
-                if (verifyShare)
-                {
-                    var shares = client.ListShares(out status);
+                var status = client.Login(appState.Settings.ServerConnection.Domain, appState.Settings.ServerConnection.UserName, appState.Settings.ServerConnection.Password);
 
-                    if (status == NTStatus.STATUS_SUCCESS)
+                if (status == NTStatus.STATUS_SUCCESS)
+                {
+                    if (verifyShare)
                     {
-                        if (shares.Contains(appState.Settings.ServerConnection.ShareName, StringComparer.OrdinalIgnoreCase) == false)
+                        var shares = client.ListShares(out status);
+
+                        if (status == NTStatus.STATUS_SUCCESS)
                         {
-                            appState.Exceptions.Add("Network share not found on the server");
+                            if (shares.Contains(appState.Settings.ServerConnection.ShareName, StringComparer.OrdinalIgnoreCase) == false)
+                            {
+                                appState.Exceptions.Add("Network share not found on the server");
+                                appState.CancellationTokenSource.Cancel();
+                                DisconnectClient(client);
+                                return null;
+                            }
+                        }
+
+                        else
+                        {
+                            appState.Exceptions.Add("Could not retrieve server shares list");
                             appState.CancellationTokenSource.Cancel();
+                            DisconnectClient(client);
                             return null;
                         }
                     }
+                }
 
-                    else
-                    {
-                        appState.Exceptions.Add("Could not retrieve server shares list");
-                        appState.CancellationTokenSource.Cancel();
-                        return null;
-                    }
+                else
+                {
+                    appState.Exceptions.Add("Server authentication failed");
+                    appState.CancellationTokenSource.Cancel();
                 }
             }
 
             else
             {
-                appState.Exceptions.Add("Server authentication failed");
+                appState.Exceptions.Add("Could not connect to the server");
                 appState.CancellationTokenSource.Cancel();
             }
-        }
 
-        else
+            if (appState.CancellationTokenSource.IsCancellationRequested == false)
+                return client;
+        }
+        catch (Exception e)
         {
-            appState.Exceptions.Add("Could not connect to the server");
+            appState.Exceptions.Add($"Exception: {e.Message}");
             appState.CancellationTokenSource.Cancel();
         }
-
-        if (appState.CancellationTokenSource.IsCancellationRequested == false)
-            return client;
-        
-        DisconnectClient(client);
 
         return null;
     }
@@ -253,9 +262,9 @@ public static class Storage
         }
     }
 
-    public static ISMBFileStore? GetFileStore(AppState appState, SMB2Client client)
+    public static ISMBFileStore? GetFileStore(AppState appState, SMB2Client? client)
     {
-        if (appState.CancellationTokenSource.IsCancellationRequested)
+        if (client is null || client.IsConnected == false || appState.CancellationTokenSource.IsCancellationRequested)
             return null;
 
         ISMBFileStore? fileStore = null;
@@ -291,7 +300,7 @@ public static class Storage
         
         var client = ConnectClient(appState);
         
-        if (client is null || appState.CancellationTokenSource.IsCancellationRequested)
+        if (client is null || client.IsConnected == false || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
         var fileStore = GetFileStore(appState, client);
@@ -381,7 +390,7 @@ public static class Storage
                     }
                     catch
                     {
-                        appState.Exceptions.Add($"Could process server file `{file.FileName}`");
+                        appState.Exceptions.Add($"Could not process server file `{file.FileName}`");
                         appState.CancellationTokenSource.Cancel();
                         state.Stop();
                     }
@@ -413,8 +422,7 @@ public static class Storage
                         return;
 
                     if (appState.CurrentSpinner is not null && i % 3 == 0)
-                        appState.CurrentSpinner.Text =
-                            $"{appState.CurrentSpinner.Text[..appState.CurrentSpinner.Text.IndexOf("...", StringComparison.Ordinal)]}... {directory.FileName}/...";
+                        appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.Text[..appState.CurrentSpinner.Text.IndexOf("...", StringComparison.Ordinal)]}... {directory.FileName}/...";
 
                     appState.ServerFiles.Add(fo);
 
@@ -422,7 +430,7 @@ public static class Storage
                 }
                 catch
                 {
-                    appState.Exceptions.Add($"Could process server directory `{directory.FileName}`");
+                    appState.Exceptions.Add($"Could not index server directory `{directory.FileName}`");
                     appState.CancellationTokenSource.Cancel();
                     state.Stop();
                 }
