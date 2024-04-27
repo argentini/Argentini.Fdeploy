@@ -54,45 +54,50 @@ Project:
 Paths:
 
     # Remote UNC path to the root of the website
-    RemoteRootPath: \web\fynydd.staging.fynydd.com\www
+    RemoteRootPath: \web\website.com\www
 
-    # Paths to static files that can be copied while the server is running
-    # Static files are copied before the server is taken offline to minimize down time;
-    StaticFilePaths:
+    # Copy specific files into the published build folder; paths are relative to the root path
+    CopyFilesToPublishFolder:
+
+        - "umbraco/Data/Umbraco.sqlite.db"
+
+    # Copy specific folders into the published build folder; paths are relative to the root path
+    CopyFoldersToPublishFolder:
+
+        - "umbraco/Data/TEMP"
+        - "test"
+        - "wwwroot/media"
+
+    # Paths to folders that can be copied while the server is running;
+    # folders are copied before the server is taken offline which shortens server downtime;
+    PreDeploymentFolderPaths:
 
         - "wwwroot"
 
-    # One-off file copies; paths are relative to the root paths
-    # Static files are copied before the server is taken offline to minimize down time;
-    StaticFileCopies:
+    # Paths to files that can be copied while the server is running;
+    # files are copied before the server is taken offline which shortens server downtime;
+    PreDeploymentFilePaths:
 
-        - Source: "/UmbracoCms/wwwroot/images/logo.jpg"
-          Destination: "/wwwroot/images/logo.jpg"
-
-    # Ignore the following relative folder paths
-    RelativeIgnorePaths:
-
-        - "umbraco"
-        - "wwwroot/media"
-        - "wwwroot/umbraco"
+        - "test/TestUmbraco.sqlite.db"
 
     # Ignore the following relative file paths
-    RelativeIgnoreFilePaths:
+    IgnoreFilePaths:
 
         - "web.config"
 
-    # Ignore all folders with the following names
-    IgnoreFoldersNamed:
+    # Ignore the following relative folder paths
+    IgnoreFolderPaths:
 
-        - "log"
+        - "wwwroot/umbraco"
 
     # Ignore all files with the following names
     IgnoreFilesNamed:
 
         - ".DS_Store"
+        - "thumbs.db"
 
-    # One-off file copies; paths are relative to the root paths
-    FileCopies:
+    # Ignore all folders with the following names
+    IgnoreFoldersNamed:
 
-        - Source: "/UmbracoCms/umbraco/Data/umbraco.sqlite.db"
-          Destination: "/umbraco/Data/umbraco.sqlite.db"
+        - "Log"
+        - "Logs"

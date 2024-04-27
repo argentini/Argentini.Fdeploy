@@ -52,7 +52,7 @@ public static class Storage
         }
     }
 
-    public static async Task CopyFolderAsync(AppState appState, string localSourcePath, string localDestinationPath, int maxTasks = 2)
+    public static void CopyFolder(AppState appState, string localSourcePath, string localDestinationPath, int maxTasks = 5)
     {
         if (maxTasks < 1)
             maxTasks = 2;
@@ -62,12 +62,10 @@ public static class Storage
 
         if (dir.Exists == false)
         {
-            appState.Exceptions.Add($"Could find source folder (copy folder) `{localSourcePath}`");
-            await appState.CancellationTokenSource.CancelAsync();
+            appState.Exceptions.Add($"Could not find source folder `{localSourcePath}`");
+            appState.CancellationTokenSource.Cancel();
             return;
         }
-
-        var dirs = dir.GetDirectories();
 
         try
         {
@@ -77,15 +75,19 @@ public static class Storage
         catch
         {
             appState.Exceptions.Add($"Could not create local folder `{localDestinationPath}`");
-            await appState.CancellationTokenSource.CancelAsync();
+            appState.CancellationTokenSource.Cancel();
             return;
         }
 
         // Get the files in the directory and copy them to the new location.
         var files = dir.GetFiles();
-        
-        foreach (var file in files)
+
+        Parallel.For(0, files.Length, new ParallelOptions { MaxDegreeOfParallelism = maxTasks }, (i, state) =>
         {
+            if (appState.CancellationTokenSource.IsCancellationRequested || state.ShouldExitCurrentIteration || state.IsStopped)
+                return;
+
+            var file = files[i];
             var tempPath = Path.Combine(localDestinationPath, file.Name);
 
             try
@@ -95,34 +97,25 @@ public static class Storage
             catch
             {
                 appState.Exceptions.Add($"Could not copy local file `{tempPath}`");
-                await appState.CancellationTokenSource.CancelAsync();
-                return;
+                appState.CancellationTokenSource.Cancel();
+                state.Stop();
             }
+        });
 
-            if (appState.CancellationTokenSource.IsCancellationRequested)
-                break;
-        }
+        if (appState.CancellationTokenSource.IsCancellationRequested)
+            return;
 
-        var tasks = new List<Task>();
-        var limit = 0;
-        
-        foreach (var subdir in dirs)
+        var dirs = dir.GetDirectories();
+
+        Parallel.For(0, dirs.Length, new ParallelOptions { MaxDegreeOfParallelism = maxTasks }, (i, state) =>
         {
-            limit++;
-            tasks.Add(CopyFolderAsync(appState, subdir.FullName, Path.Combine(localDestinationPath, subdir.Name), maxTasks));
+            if (appState.CancellationTokenSource.IsCancellationRequested || state.ShouldExitCurrentIteration || state.IsStopped)
+                return;
+
+            var subdir = dirs[i];
             
-            if (limit % maxTasks == 0)
-            {
-                if (appState.CancellationTokenSource.IsCancellationRequested == false)
-                    await Task.WhenAll(tasks);
-            }
-            
-            if (appState.CancellationTokenSource.IsCancellationRequested)
-                break;
-        }
-        
-        if (appState.CancellationTokenSource.IsCancellationRequested == false)
-            await Task.WhenAll(tasks);
+            CopyFolder(appState, subdir.FullName, Path.Combine(localDestinationPath, subdir.Name), maxTasks);
+        });
     }
     
     #endregion
@@ -131,7 +124,7 @@ public static class Storage
     
     public static bool FolderPathShouldBeIgnoredDuringScan(AppState appState, FileObject fo)
     {
-        foreach (var ignorePath in appState.Settings.Paths.RelativeIgnorePaths)
+        foreach (var ignorePath in appState.Settings.Paths.IgnoreFolderPaths)
         {
             if (fo.RelativeComparablePath != ignorePath)
                 continue;
@@ -144,7 +137,7 @@ public static class Storage
 
     public static bool FilePathShouldBeIgnoredDuringScan(AppState appState, FileObject fo)
     {
-        foreach (var ignorePath in appState.Settings.Paths.RelativeIgnoreFilePaths)
+        foreach (var ignorePath in appState.Settings.Paths.IgnoreFilePaths)
         {
             if (fo.RelativeComparablePath != ignorePath)
                 continue;
@@ -228,7 +221,7 @@ public static class Storage
                 appState.Exceptions.Add("Server authentication failed");
                 appState.CancellationTokenSource.Cancel();
             }
-        }        
+        }
 
         else
         {

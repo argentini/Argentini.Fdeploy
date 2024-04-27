@@ -4,12 +4,14 @@ public sealed class PathSettings
 {
     public string RemoteRootPath { get; set; } = string.Empty;
 
-    public List<string> StaticFilePaths { get; set; } = [];
-    public List<string> RelativeIgnorePaths { get; set; } = [];
-    public List<string> RelativeIgnoreFilePaths { get; set; } = [];
+    public List<string> CopyFilesToPublishFolder { get; set; } = [];
+    public List<string> CopyFoldersToPublishFolder { get; set; } = [];
+    
+    public List<string> PreDeploymentFolderPaths { get; set; } = [];
+    public List<string> PreDeploymentFilePaths { get; set; } = [];
+
+    public List<string> IgnoreFolderPaths { get; set; } = [];
+    public List<string> IgnoreFilePaths { get; set; } = [];
     public List<string> IgnoreFoldersNamed { get; set; } = [];
     public List<string> IgnoreFilesNamed { get; set; } = [];
-    
-    public List<FileCopySettings> StaticFileCopies { get; set; } = [];
-    public List<FileCopySettings> FileCopies { get; set; } = [];
 }

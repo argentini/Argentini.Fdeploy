@@ -115,7 +115,7 @@ public sealed class AppRunner
             return;
         }
             
-        AppState.WorkingPath = AppState.YamlProjectFilePath[..AppState.YamlProjectFilePath.LastIndexOf(Path.DirectorySeparatorChar)];
+        AppState.ProjectPath = AppState.YamlProjectFilePath[..AppState.YamlProjectFilePath.LastIndexOf(Path.DirectorySeparatorChar)];
         
         var yaml = File.ReadAllText(AppState.YamlProjectFilePath);
         var deserializer = new DeserializerBuilder().IgnoreUnmatchedProperties().Build();
@@ -126,25 +126,37 @@ public sealed class AppRunner
 
         #region Normalize Paths
 
+        AppState.PublishPath = $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}publish";
+        AppState.TrimmablePublishPath = AppState.PublishPath.TrimPath();
+
         AppState.Settings.Project.ProjectFilePath = AppState.Settings.Project.ProjectFilePath.NormalizePath();
         AppState.Settings.Paths.RemoteRootPath = AppState.Settings.Paths.RemoteRootPath.NormalizePath();
 
-        AppState.Settings.Paths.StaticFilePaths.NormalizePaths();
-        AppState.Settings.Paths.RelativeIgnorePaths.NormalizePaths();
-        AppState.Settings.Paths.RelativeIgnoreFilePaths.NormalizePaths();
+        AppState.Settings.Paths.CopyFilesToPublishFolder.NormalizePaths();
+        AppState.Settings.Paths.CopyFoldersToPublishFolder.NormalizePaths();
 
-        foreach (var copy in AppState.Settings.Paths.StaticFileCopies)
-        {
-            copy.Source = copy.Source.NormalizePath();
-            copy.Destination = copy.Destination.NormalizePath();
-        }
+        AppState.Settings.Paths.PreDeploymentFilePaths.NormalizePaths();
+        AppState.Settings.Paths.PreDeploymentFolderPaths.NormalizePaths();
+
+        AppState.Settings.Paths.IgnoreFilePaths.NormalizePaths();
+        AppState.Settings.Paths.IgnoreFolderPaths.NormalizePaths();
+
+        var newList = new List<string>();
         
-        foreach (var copy in AppState.Settings.Paths.FileCopies)
-        {
-            copy.Source = copy.Source.NormalizePath();
-            copy.Destination = copy.Destination.NormalizePath();
-        }
+        foreach (var item in AppState.Settings.Paths.CopyFilesToPublishFolder)
+            newList.Add(item.NormalizePath().TrimStart(AppState.ProjectPath).TrimPath());
+
+        AppState.Settings.Paths.CopyFilesToPublishFolder.Clear();
+        AppState.Settings.Paths.CopyFilesToPublishFolder.AddRange(newList);
+
+        newList.Clear();
         
+        foreach (var item in AppState.Settings.Paths.CopyFoldersToPublishFolder)
+            newList.Add(item.NormalizePath().TrimStart(AppState.ProjectPath).TrimPath());
+
+        AppState.Settings.Paths.CopyFoldersToPublishFolder.Clear();
+        AppState.Settings.Paths.CopyFoldersToPublishFolder.AddRange(newList);
+
         #endregion
     }
     
@@ -323,11 +335,8 @@ public sealed class AppRunner
         await Console.Out.WriteLineAsync();
 
         SMB2Client? client = null;
-
+        
         #region Publish Project
-
-        AppState.PublishPath = $"{AppState.WorkingPath}{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}publish";
-        AppState.TrimmablePublishPath = AppState.PublishPath.TrimPath();
 
         var sb = new StringBuilder();
 
@@ -340,7 +349,7 @@ public sealed class AppRunner
                 Timer.Restart();
                 
                 var cmd = Cli.Wrap("dotnet")
-                    .WithArguments(new [] { "publish", "--framework", $"net{AppState.Settings.Project.TargetFramework:N1}", $"{AppState.WorkingPath}{Path.DirectorySeparatorChar}{AppState.Settings.Project.ProjectFilePath}", "-c", AppState.Settings.Project.BuildConfiguration, "-o", AppState.PublishPath, $"/p:EnvironmentName={AppState.Settings.Project.EnvironmentName}" })
+                    .WithArguments(new [] { "publish", "--framework", $"net{AppState.Settings.Project.TargetFramework:N1}", $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{AppState.Settings.Project.ProjectFilePath}", "-c", AppState.Settings.Project.BuildConfiguration, "-o", AppState.PublishPath, $"/p:EnvironmentName={AppState.Settings.Project.EnvironmentName}" })
                     .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
                     .WithStandardErrorPipe(PipeTarget.Null);
 		    
@@ -370,6 +379,99 @@ public sealed class AppRunner
             return;
 
         //await Storage.CopyFolderAsync(AppState, Path.Combine(AppState.WorkingPath, "wwwroot", "media"), Path.Combine(AppState.PublishPath, "wwwroot", "media"));
+        
+        #endregion
+        
+        #region Copy Additional Files Into Publish Folder
+
+        if (AppState.Settings.Paths.CopyFilesToPublishFolder.Count != 0)
+        {
+            await Spinner.StartAsync("Adding files to publish folder...", async spinner =>
+            {
+                var spinnerText = spinner.Text;
+
+                Timer.Restart();
+                
+                foreach (var item in AppState.Settings.Paths.CopyFilesToPublishFolder)
+                {
+                    var sourceFilePath = $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{item}";
+                    var destFilePath = $"{AppState.PublishPath}{Path.DirectorySeparatorChar}{item}";
+                    var destParentPath = destFilePath.TrimEnd(item.GetLastPathSegment()) ?? string.Empty;
+                    
+                    if (AppState.CancellationTokenSource.IsCancellationRequested)
+                        break;
+                    
+                    try
+                    {
+                        Timer.Restart();
+
+                        if (Directory.Exists(destParentPath) == false)
+                            Directory.CreateDirectory(destParentPath);
+                        
+                        File.Copy(sourceFilePath, destFilePath, true);
+                        
+                        spinner.Text = $"{spinnerText} {item.GetLastPathSegment()}...";
+                    }
+
+                    catch
+                    {
+                        spinner.Fail($"{spinnerText} {item.GetLastPathSegment()}... Failed!");
+                        AppState.Exceptions.Add($"Could not add file `{sourceFilePath} => {destFilePath}`");
+                        await AppState.CancellationTokenSource.CancelAsync();
+                    }
+                }
+
+                if (AppState.CancellationTokenSource.IsCancellationRequested == false)
+                    spinner.Text = $"{spinnerText} {AppState.Settings.Paths.PreDeploymentFilePaths.Count:N0} file{(AppState.Settings.Paths.PreDeploymentFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+
+            }, Patterns.Dots, Patterns.Line);
+
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                return;
+        }
+        
+        #endregion
+        
+        #region Copy Additional Folders Into Publish Folder
+        
+        if (AppState.Settings.Paths.CopyFoldersToPublishFolder.Count != 0)
+        {
+            await Spinner.StartAsync("Adding folders to publish folder...", async spinner =>
+            {
+                var spinnerText = spinner.Text;
+
+                Timer.Restart();
+                
+                foreach (var item in AppState.Settings.Paths.CopyFoldersToPublishFolder)
+                {
+                    if (AppState.CancellationTokenSource.IsCancellationRequested)
+                        break;
+                    
+                    try
+                    {
+                        Timer.Restart();
+
+                        Storage.CopyFolder(AppState, $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{item}", $"{AppState.PublishPath}{Path.DirectorySeparatorChar}{item}");
+
+                        spinner.Text = $"{spinnerText} {item.GetLastPathSegment()}...";
+                    }
+
+                    catch
+                    {
+                        spinner.Fail($"{spinnerText} {item.GetLastPathSegment()}... Failed!");
+                        AppState.Exceptions.Add($"Could not add folder `{item}`");
+                        await AppState.CancellationTokenSource.CancelAsync();
+                    }
+                }
+
+                if (AppState.CancellationTokenSource.IsCancellationRequested == false)
+                    spinner.Text = $"{spinnerText} {AppState.Settings.Paths.PreDeploymentFilePaths.Count:N0} folder{(AppState.Settings.Paths.PreDeploymentFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+
+            }, Patterns.Dots, Patterns.Line);
+
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                return;
+        }
         
         #endregion
         
@@ -455,7 +557,7 @@ public sealed class AppRunner
                     // Remove paths that enclose ignore paths
                     foreach (var item in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
                     {
-                        foreach (var ignorePath in AppState.Settings.Paths.RelativeIgnorePaths)
+                        foreach (var ignorePath in AppState.Settings.Paths.IgnoreFolderPaths)
                         {
                             if (ignorePath.StartsWith(item.RelativeComparablePath) == false)
                                 continue;
@@ -499,11 +601,11 @@ public sealed class AppRunner
 
             #endregion
 
-            #region Copy Static File Paths
+            #region Copy Pre-Deployment Folders
 
-            if (AppState.Settings.Paths.StaticFilePaths.Any())
+            if (AppState.Settings.Paths.PreDeploymentFolderPaths.Count != 0)
             {
-                await Spinner.StartAsync("Copying static file paths...", async spinner =>
+                await Spinner.StartAsync("Copying pre-deployment folders...", async spinner =>
                 {
                     var spinnerText = spinner.Text;
                     var foldersToCreate = new List<string>();
@@ -512,7 +614,7 @@ public sealed class AppRunner
 
                     Timer.Restart();
                     
-                    foreach (var folder in AppState.LocalFiles.ToList().Where(f => f is { IsFolder: true, IsStaticFilePath: true }))
+                    foreach (var folder in AppState.LocalFiles.ToList().Where(f => f is { IsFolder: true, IsPreDeployment: true }))
                     {
                         if (AppState.ServerFiles.Any(f => f.IsFolder && f.RelativeComparablePath == folder.RelativeComparablePath) == false)
                             foldersToCreate.Add($"{AppState.Settings.Paths.RemoteRootPath.SetSmbPathSeparators().TrimPath()}\\{folder.RelativeComparablePath.SetSmbPathSeparators().TrimPath()}");
@@ -536,7 +638,7 @@ public sealed class AppRunner
                         return;
                     }
 
-                    var filesToCopy = AppState.LocalFiles.ToList().Where(f => f is { IsFile: true, IsStaticFilePath: true }).ToList();
+                    var filesToCopy = AppState.LocalFiles.ToList().Where(f => f is { IsFile: true, IsPreDeployment: true }).ToList();
                     var filesCopied = 0;
 
                     foreach (var file in filesToCopy)
@@ -571,11 +673,11 @@ public sealed class AppRunner
 
             #endregion
 
-            #region Process Static File Copies
+            #region Copy Pre-Deployment Files
 
-            if (AppState.Settings.Paths.StaticFileCopies.Count != 0)
+            if (AppState.Settings.Paths.PreDeploymentFilePaths.Count != 0)
             {
-                await Spinner.StartAsync("Copying static files...", async spinner =>
+                await Spinner.StartAsync("Copying pre-deployment files...", async spinner =>
                 {
                     AppState.CurrentSpinner = spinner;
 
@@ -588,15 +690,30 @@ public sealed class AppRunner
 
                     var spinnerText = spinner.Text;
 
-                    foreach (var file in AppState.Settings.Paths.StaticFileCopies)
+                    foreach (var item in AppState.Settings.Paths.PreDeploymentFilePaths)
                     {
-                        await Storage.CopyFileAsync(AppState, fileStore, file.Source, file.Destination);
+                        var localFile = AppState.LocalFiles.FirstOrDefault(f => f.RelativeComparablePath == item && f.IsDeleted == false);
+
+                        if (localFile is null)
+                        {
+                            spinner.Fail($"{spinnerText} {item.GetLastPathSegment()}... Failed!");
+                            AppState.Exceptions.Add($"Local file does not exist: `{item}`");
+                            await AppState.CancellationTokenSource.CancelAsync();
+                            break;
+                        }
+                        
+                        var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == localFile.RelativeComparablePath && f.IsDeleted == false);
+
+                        if (serverFile is not null && serverFile.LastWriteTime == localFile.LastWriteTime && serverFile.FileSizeBytes == localFile.FileSizeBytes)
+                            continue;
+                        
+                        await Storage.CopyFileAsync(AppState, fileStore, localFile);
                     }
 
                     if (AppState.CancellationTokenSource.IsCancellationRequested)
                         spinner.Fail($"{spinnerText} Failed!");
                     else
-                        spinner.Text = $"{spinnerText} {AppState.Settings.Paths.StaticFileCopies.Count:N0} file{(AppState.Settings.Paths.StaticFileCopies.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                        spinner.Text = $"{spinnerText} {AppState.Settings.Paths.PreDeploymentFilePaths.Count:N0} file{(AppState.Settings.Paths.PreDeploymentFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
 
                 }, Patterns.Dots, Patterns.Line);
 
@@ -644,17 +761,7 @@ public sealed class AppRunner
 
             Timer.Restart();
             
-            var itemsToCopy = AppState.LocalFiles.Where(f => f.IsFile).ToList();
-
-            foreach (var fo in itemsToCopy.ToList())
-            {
-                foreach (var path in AppState.Settings.Paths.StaticFilePaths)
-                {
-                    if (fo.RelativeComparablePath.StartsWith(path))
-                        itemsToCopy.Remove(fo);
-                }
-            }
-
+            var itemsToCopy = AppState.LocalFiles.Where(f => f is { IsFile: true, IsPreDeployment: false }).ToList();
             var itemCount = itemsToCopy.Count;
 
             await Spinner.StartAsync("Deploy files...", async spinner =>
@@ -700,40 +807,6 @@ public sealed class AppRunner
 
             if (AppState.CancellationTokenSource.IsCancellationRequested)
                 return;
-
-            #endregion
-
-            #region Process File Copies
-
-            if (AppState.Settings.Paths.FileCopies.Count != 0)
-            {
-                await Spinner.StartAsync("Processing file copies...", async spinner =>
-                {
-                    AppState.CurrentSpinner = spinner;
-
-                    var spinnerText = spinner.Text;
-                    var fileStore = Storage.GetFileStore(AppState, client);
-
-                    if (fileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
-                        return;
-
-                    Timer.Restart();
-                    
-                    foreach (var file in AppState.Settings.Paths.FileCopies)
-                    {
-                        await Storage.CopyFileAsync(AppState, fileStore, file.Source, file.Destination);
-                    }
-
-                    if (AppState.CancellationTokenSource.IsCancellationRequested)
-                        spinner.Fail($"{spinnerText} Failed!");
-                    else
-                        spinner.Text = $"{spinnerText} {AppState.Settings.Paths.FileCopies.Count:N0} file{(AppState.Settings.Paths.FileCopies.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-
-                }, Patterns.Dots, Patterns.Line);
-
-                if (AppState.CancellationTokenSource.IsCancellationRequested)
-                    return;
-            }
 
             #endregion
 

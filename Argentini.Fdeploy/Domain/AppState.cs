@@ -7,7 +7,7 @@ public sealed class AppState
 {
     public string AppOfflineMarkup { get; set; } = string.Empty;
     public string YamlProjectFilePath { get; set; } = string.Empty;
-    public string WorkingPath { get; set; } = string.Empty;
+    public string ProjectPath { get; set; } = string.Empty;
     public string PublishPath { get; set; } = string.Empty;
     public string TrimmablePublishPath { get; set; } = string.Empty;
 
