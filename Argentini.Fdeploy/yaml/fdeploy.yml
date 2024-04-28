@@ -3,13 +3,10 @@
 # Configuration files must be named `fdeploy.yml` or  `fdeploy-{name}.yml` so fdeploy can call a configuration by its name
 # (e.g. fdeploy production). You should create files for each deployment target.
 
-# Delete destination files and folders that are not in the source; default is true
+# Delete destination files and folders that are not published; default is true
 DeleteOrphans: true
 
-# Overwrite the existing root web.config file if it exists; default is true
-OverwriteWebConfig: true
-
-# Writes an AppOffline.html file to the server to take it offline for the deployment; default is true
+# During deployment take the server offline using a file named app_offline.htm; default is true
 TakeServerOffline: true
 
 # Seconds to wait after taking the server offline; default is 10
@@ -34,11 +31,8 @@ ServerConnection:
     ConnectTimeoutMs: 5000
     ResponseTimeoutMs: 15000
 
-Offline:
-    
-    MetaTitle: "Unavailable for Maintenance"
-    PageTitle: "Unavailable for Maintenance"
-    PageHtml: "<p>The website is being updated and should be available shortly.</p><p><strong>Check back soon!</strong></p>"
+    # Remote UNC path to the root of the website
+    RemoteRootPath: "\\web\\website.com\\www"
 
 Project:
 
@@ -53,46 +47,66 @@ Project:
 
     # Configuration; default is "Release"
     BuildConfiguration: Release
-
-Paths:
-
-    # Remote UNC path to the root of the website
-    RemoteRootPath: "\\web\\website.com\\www"
-
-    # Copy specific files into the published build folder; paths are relative to the root path
+    
+    # Copy specific files into the published build folder; paths are relative to the root path;
+    # processed without ignore rules
     CopyFilesToPublishFolder:
         - "umbraco/Data/Umbraco.sqlite.db"
 
-    # Copy specific folders into the published build folder; paths are relative to the root path
+    # Copy specific folders into the published build folder; paths are relative to the root path;
+    # processed without ignore rules
     CopyFoldersToPublishFolder:
         - "umbraco/Data/TEMP"
         - "test"
         - "wwwroot/media"
 
+Deployment:
+
     # Paths to folders that can be copied while the server is running;
     # folders are copied before the server is taken offline which shortens server downtime;
-    SafeCopyFolderPaths:
+    OnlineCopyFolderPaths:
         - "wwwroot"
 
     # Paths to files that can be copied while the server is running;
     # files are copied before the server is taken offline which shortens server downtime;
-    SafeCopyFilePaths:
-        - "test/backup.sqlite.db"
+    OnlineCopyFilePaths:
+        - "backup/backup.sqlite.db"
 
-    # Ignore the following relative file paths
+    # Ignore the following relative file paths;
+    # applies to safe copies, orphan deletion, and the primary file deployment
     IgnoreFilePaths:
         - "web.config"
 
-    # Ignore the following relative folder paths
+    # Ignore the following relative folder paths;
+    # applies to safe copies, orphan deletion, and the primary file deployment
     IgnoreFolderPaths:
         - "wwwroot/umbraco"
+        - "wwwroot/media"
 
-    # Ignore all files with the following names
+    # Ignore all files with the following names;
+    # applies to safe copies, orphan deletion, and the primary file deployment
     IgnoreFilesNamed:
         - ".DS_Store"
         - "thumbs.db"
 
-    # Ignore all folders with the following names
+    # Ignore all folders with the following names;
+    # applies to safe copies, orphan deletion, and the primary file deployment
     IgnoreFoldersNamed:
         - "Log"
         - "Logs"
+
+    # Paths of folders to copy without ignore rules;
+    # these copies are performed last
+    AdditionalCopyFolderPaths:
+        - "wwwroot/media"
+
+    # Paths of files to copy without ignore rules;
+    # these copies are performed last
+    AdditionalCopyFilePaths:
+        - "test/backup.sqlite.db"
+
+AppOffline:
+    
+    MetaTitle: "Unavailable for Maintenance"
+    PageTitle: "Unavailable for Maintenance"
+    PageHtml: "<p>The website is being updated and should be available shortly.</p><p><strong>Check back soon!</strong></p>"
