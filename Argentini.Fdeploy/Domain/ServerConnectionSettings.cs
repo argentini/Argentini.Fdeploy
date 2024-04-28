@@ -2,6 +2,7 @@ namespace Argentini.Fdeploy.Domain;
 
 public sealed class ServerConnectionSettings
 {
+    public string RemoteRootPath { get; set; } = string.Empty;
     public string ServerAddress { get; set; } = string.Empty;
     public string ShareName { get; set; } = string.Empty;
     public string Domain { get; set; } = string.Empty;

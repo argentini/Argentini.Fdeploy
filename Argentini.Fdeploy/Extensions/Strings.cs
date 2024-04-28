@@ -920,9 +920,9 @@ public static class Strings
 
     public static string FormatServerPath(this string serverFilePath, AppState appState)
     {
-        var formattedPath = serverFilePath.NormalizeSmbPath().TrimStart(appState.Settings.Paths.RemoteRootPath.NormalizeSmbPath()).TrimPath();
+        var formattedPath = serverFilePath.NormalizeSmbPath().TrimStart(appState.Settings.ServerConnection.RemoteRootPath).TrimPath();
         
-        return $"{appState.Settings.Paths.RemoteRootPath.NormalizeSmbPath()}{(formattedPath != string.Empty ? $"\\{formattedPath}" : string.Empty)}";
+        return $"{appState.Settings.ServerConnection.RemoteRootPath}{(formattedPath != string.Empty ? $"\\{formattedPath}" : string.Empty)}";
     }
 
     public static string FormatElapsedTime(this TimeSpan elapsed)

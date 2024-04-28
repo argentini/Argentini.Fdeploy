@@ -19,9 +19,9 @@ public sealed class LocalFileObject : FileObject
 
         SetPathSegments();
 
-        AbsoluteServerPath = $"{appState.Settings.Paths.RemoteRootPath}\\{RelativeComparablePath}".FormatServerPath(appState);
+        AbsoluteServerPath = $"{appState.Settings.ServerConnection.RemoteRootPath}\\{RelativeComparablePath}".FormatServerPath(appState);
  
-        foreach (var staticFolderPath in appState.Settings.Paths.SafeCopyFolderPaths)
+        foreach (var staticFolderPath in appState.Settings.Deployment.OnlineCopyFolderPaths)
         {
             if (RelativeComparablePath.StartsWith(staticFolderPath) == false)
                 continue;
@@ -30,7 +30,7 @@ public sealed class LocalFileObject : FileObject
             return;
         }
         
-        foreach (var staticFilePath in appState.Settings.Paths.SafeCopyFilePaths)
+        foreach (var staticFilePath in appState.Settings.Deployment.OnlineCopyFilePaths)
         {
             if (RelativeComparablePath != staticFilePath)
                 continue;

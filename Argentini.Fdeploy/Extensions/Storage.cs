@@ -121,7 +121,7 @@ public static class Storage
     
     public static bool FolderPathShouldBeIgnoredDuringScan(AppState appState, FileObject fo)
     {
-        foreach (var ignorePath in appState.Settings.Paths.IgnoreFolderPaths)
+        foreach (var ignorePath in appState.Settings.Deployment.IgnoreFolderPaths)
         {
             if (fo.RelativeComparablePath != ignorePath)
                 continue;
@@ -129,12 +129,12 @@ public static class Storage
             return true;
         }
 
-        return appState.Settings.Paths.IgnoreFoldersNamed.Contains(fo.FileNameOrPathSegment);
+        return appState.Settings.Deployment.IgnoreFoldersNamed.Contains(fo.FileNameOrPathSegment);
     }
 
     public static bool FilePathShouldBeIgnoredDuringScan(AppState appState, FileObject fo)
     {
-        foreach (var ignorePath in appState.Settings.Paths.IgnoreFilePaths)
+        foreach (var ignorePath in appState.Settings.Deployment.IgnoreFilePaths)
         {
             if (fo.RelativeComparablePath != ignorePath)
                 continue;
@@ -142,7 +142,7 @@ public static class Storage
             return true;
         }
 
-        return appState.Settings.Paths.IgnoreFilesNamed.Contains(fo.FileNameOrPathSegment);
+        return appState.Settings.Deployment.IgnoreFilesNamed.Contains(fo.FileNameOrPathSegment);
     }
     
     #endregion
@@ -382,7 +382,7 @@ public static class Storage
                         var filePath = $"{path}\\{file.FileName}";
 
                         var fo = new ServerFileObject(appState, filePath.Trim('\\'), file.LastWriteTime.ToFileTimeUtc(),
-                            file.EndOfFile, true, appState.Settings.Paths.RemoteRootPath);
+                            file.EndOfFile, true, appState.Settings.ServerConnection.RemoteRootPath);
 
                         if (FilePathShouldBeIgnoredDuringScan(appState, fo))
                             return;
@@ -417,7 +417,7 @@ public static class Storage
                     var directoryPath = $"{path}\\{directory.FileName}";
 
                     var fo = new ServerFileObject(appState, directoryPath.Trim('\\'),
-                        directory.LastWriteTime.ToFileTimeUtc(), 0, false, appState.Settings.Paths.RemoteRootPath);
+                        directory.LastWriteTime.ToFileTimeUtc(), 0, false, appState.Settings.ServerConnection.RemoteRootPath);
 
                     if (FolderPathShouldBeIgnoredDuringScan(appState, fo))
                         return;
@@ -886,7 +886,7 @@ public static class Storage
         if (fileStore is null)
             return;
 
-        var serverFilePath = $"{appState.Settings.Paths.RemoteRootPath}/app_offline.htm".FormatServerPath(appState);
+        var serverFilePath = $"{appState.Settings.ServerConnection.RemoteRootPath}\\app_offline.htm";
         
         try
         {
@@ -950,7 +950,7 @@ public static class Storage
         if (fileStore is null)
             return;
 
-        var serverFilePath = $"{appState.Settings.Paths.RemoteRootPath}/app_offline.htm".FormatServerPath(appState);
+        var serverFilePath = $"{appState.Settings.ServerConnection.RemoteRootPath}/app_offline.htm".FormatServerPath(appState);
         var success = true;
         var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
         

@@ -31,7 +31,7 @@ ServerConnection:
     ConnectTimeoutMs: 5000
     ResponseTimeoutMs: 15000
 
-    # Remote UNC path to the root of the website
+    # Remote path to the root of the website without the share name
     RemoteRootPath: "\\web\\website.com\\www"
 
 Project:
@@ -95,18 +95,8 @@ Deployment:
         - "Log"
         - "Logs"
 
-    # Paths of folders to copy without ignore rules;
-    # these copies are performed last
-    AdditionalCopyFolderPaths:
-        - "wwwroot/media"
-
-    # Paths of files to copy without ignore rules;
-    # these copies are performed last
-    AdditionalCopyFilePaths:
-        - "test/backup.sqlite.db"
-
 AppOffline:
     
     MetaTitle: "Unavailable for Maintenance"
     PageTitle: "Unavailable for Maintenance"
-    PageHtml: "<p>The website is being updated and should be available shortly.</p><p><strong>Check back soon!</strong></p>"
+    ContentHtml: "<p>The website is being updated and should be available shortly.</p><p><strong>Check back soon!</strong></p>"

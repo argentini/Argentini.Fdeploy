@@ -1,4 +1,3 @@
-using System.Net;
 using Argentini.Fdeploy.ConsoleBusy;
 using SMBLibrary.Client;
 using YamlDotNet.Serialization;
@@ -134,32 +133,32 @@ public sealed class AppRunner
         AppState.TrimmablePublishPath = AppState.PublishPath.TrimPath();
 
         AppState.Settings.Project.ProjectFilePath = AppState.Settings.Project.ProjectFilePath.NormalizePath();
-        AppState.Settings.Paths.RemoteRootPath = AppState.Settings.Paths.RemoteRootPath.NormalizePath();
+        AppState.Settings.ServerConnection.RemoteRootPath = AppState.Settings.ServerConnection.RemoteRootPath.NormalizeSmbPath();
 
-        AppState.Settings.Paths.CopyFilesToPublishFolder.NormalizePaths();
-        AppState.Settings.Paths.CopyFoldersToPublishFolder.NormalizePaths();
+        AppState.Settings.Project.CopyFilesToPublishFolder.NormalizePaths();
+        AppState.Settings.Project.CopyFoldersToPublishFolder.NormalizePaths();
 
-        AppState.Settings.Paths.SafeCopyFilePaths.NormalizePaths();
-        AppState.Settings.Paths.SafeCopyFolderPaths.NormalizePaths();
+        AppState.Settings.Deployment.OnlineCopyFilePaths.NormalizePaths();
+        AppState.Settings.Deployment.OnlineCopyFolderPaths.NormalizePaths();
 
-        AppState.Settings.Paths.IgnoreFilePaths.NormalizePaths();
-        AppState.Settings.Paths.IgnoreFolderPaths.NormalizePaths();
+        AppState.Settings.Deployment.IgnoreFilePaths.NormalizePaths();
+        AppState.Settings.Deployment.IgnoreFolderPaths.NormalizePaths();
 
         var newList = new List<string>();
         
-        foreach (var item in AppState.Settings.Paths.CopyFilesToPublishFolder)
+        foreach (var item in AppState.Settings.Project.CopyFilesToPublishFolder)
             newList.Add(item.NormalizePath().TrimStart(AppState.ProjectPath).TrimPath());
 
-        AppState.Settings.Paths.CopyFilesToPublishFolder.Clear();
-        AppState.Settings.Paths.CopyFilesToPublishFolder.AddRange(newList);
+        AppState.Settings.Project.CopyFilesToPublishFolder.Clear();
+        AppState.Settings.Project.CopyFilesToPublishFolder.AddRange(newList);
 
         newList.Clear();
         
-        foreach (var item in AppState.Settings.Paths.CopyFoldersToPublishFolder)
+        foreach (var item in AppState.Settings.Project.CopyFoldersToPublishFolder)
             newList.Add(item.NormalizePath().TrimStart(AppState.ProjectPath).TrimPath());
 
-        AppState.Settings.Paths.CopyFoldersToPublishFolder.Clear();
-        AppState.Settings.Paths.CopyFoldersToPublishFolder.AddRange(newList);
+        AppState.Settings.Project.CopyFoldersToPublishFolder.Clear();
+        AppState.Settings.Project.CopyFoldersToPublishFolder.AddRange(newList);
 
         #endregion
     }
@@ -331,9 +330,9 @@ public sealed class AppRunner
         #endregion
 
         AppState.AppOfflineMarkup = await File.ReadAllTextAsync(Path.Combine(await GetEmbeddedHtmlPathAsync(), "AppOffline.html"), AppState.CancellationTokenSource.Token);
-        AppState.AppOfflineMarkup = AppState.AppOfflineMarkup.Replace("{{MetaTitle}}", AppState.Settings.Offline.MetaTitle);
-        AppState.AppOfflineMarkup = AppState.AppOfflineMarkup.Replace("{{PageTitle}}", AppState.Settings.Offline.PageTitle);
-        AppState.AppOfflineMarkup = AppState.AppOfflineMarkup.Replace("{{PageHtml}}", AppState.Settings.Offline.PageHtml);
+        AppState.AppOfflineMarkup = AppState.AppOfflineMarkup.Replace("{{MetaTitle}}", AppState.Settings.AppOffline.MetaTitle);
+        AppState.AppOfflineMarkup = AppState.AppOfflineMarkup.Replace("{{PageTitle}}", AppState.Settings.AppOffline.PageTitle);
+        AppState.AppOfflineMarkup = AppState.AppOfflineMarkup.Replace("{{PageHtml}}", AppState.Settings.AppOffline.ContentHtml);
 
         await ColonOutAsync("Started Deployment", $"{DateTime.Now:HH:mm:ss.fff}");
         await Console.Out.WriteLineAsync();
@@ -346,11 +345,10 @@ public sealed class AppRunner
 
         // Verify connection
         // Index server files (ignore rules)
-        // Safe copies (ignore rules)
+        // Online copies (ignore rules)
         
         // OFFLINE
-        // Unsafe copies (ignore rules)
-        // Additional files/folder copies
+        // Offline copies (ignore rules)
         // Process deletions (ignore rules)
         // ONLINE
 
@@ -404,7 +402,7 @@ public sealed class AppRunner
         
         #region Copy Additional Files Into Publish Folder
 
-        if (AppState.Settings.Paths.CopyFilesToPublishFolder.Count != 0)
+        if (AppState.Settings.Project.CopyFilesToPublishFolder.Count != 0)
         {
             await Spinner.StartAsync("Adding files to publish folder...", async spinner =>
             {
@@ -412,7 +410,7 @@ public sealed class AppRunner
 
                 Timer.Restart();
                 
-                foreach (var item in AppState.Settings.Paths.CopyFilesToPublishFolder)
+                foreach (var item in AppState.Settings.Project.CopyFilesToPublishFolder)
                 {
                     var sourceFilePath = $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{item}";
                     var destFilePath = $"{AppState.PublishPath}{Path.DirectorySeparatorChar}{item}";
@@ -442,7 +440,7 @@ public sealed class AppRunner
                 }
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested == false)
-                    spinner.Text = $"{spinnerText} {AppState.Settings.Paths.SafeCopyFilePaths.Count:N0} file{(AppState.Settings.Paths.SafeCopyFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                    spinner.Text = $"{spinnerText} {AppState.Settings.Deployment.OnlineCopyFilePaths.Count:N0} file{(AppState.Settings.Deployment.OnlineCopyFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
 
             }, Patterns.Dots, Patterns.Line);
 
@@ -454,7 +452,7 @@ public sealed class AppRunner
         
         #region Copy Additional Folders Into Publish Folder
         
-        if (AppState.Settings.Paths.CopyFoldersToPublishFolder.Count != 0)
+        if (AppState.Settings.Project.CopyFoldersToPublishFolder.Count != 0)
         {
             await Spinner.StartAsync("Adding folders to publish folder...", async spinner =>
             {
@@ -462,7 +460,7 @@ public sealed class AppRunner
 
                 Timer.Restart();
                 
-                foreach (var item in AppState.Settings.Paths.CopyFoldersToPublishFolder)
+                foreach (var item in AppState.Settings.Project.CopyFoldersToPublishFolder)
                 {
                     if (AppState.CancellationTokenSource.IsCancellationRequested)
                         break;
@@ -485,7 +483,7 @@ public sealed class AppRunner
                 }
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested == false)
-                    spinner.Text = $"{spinnerText} {AppState.Settings.Paths.SafeCopyFilePaths.Count:N0} folder{(AppState.Settings.Paths.SafeCopyFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                    spinner.Text = $"{spinnerText} {AppState.Settings.Deployment.OnlineCopyFilePaths.Count:N0} folder{(AppState.Settings.Deployment.OnlineCopyFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
 
             }, Patterns.Dots, Patterns.Line);
 
@@ -538,7 +536,7 @@ public sealed class AppRunner
 
                 Timer.Restart();
 
-                Storage.RecurseServerPath(AppState, AppState.Settings.Paths.RemoteRootPath.NormalizeSmbPath());
+                Storage.RecurseServerPath(AppState, AppState.Settings.ServerConnection.RemoteRootPath);
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
                     spinner.Fail($"{spinnerText} Failed!");
@@ -577,7 +575,7 @@ public sealed class AppRunner
                     // Remove paths that enclose ignore paths
                     foreach (var item in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
                     {
-                        foreach (var ignorePath in AppState.Settings.Paths.IgnoreFolderPaths)
+                        foreach (var ignorePath in AppState.Settings.Deployment.IgnoreFolderPaths)
                         {
                             if (ignorePath.StartsWith(item.RelativeComparablePath) == false)
                                 continue;
@@ -622,7 +620,7 @@ public sealed class AppRunner
 
             #region Deploy Safe Copy Folders
 
-            if (AppState.Settings.Paths.SafeCopyFolderPaths.Count != 0)
+            if (AppState.Settings.Deployment.OnlineCopyFolderPaths.Count != 0)
             {
                 await Spinner.StartAsync("Deploying safe copy folders...", async spinner =>
                 {
@@ -636,7 +634,7 @@ public sealed class AppRunner
                     foreach (var folder in AppState.LocalFiles.ToList().Where(f => f is { IsFolder: true, IsSafeCopy: true }))
                     {
                         if (AppState.ServerFiles.Any(f => f.IsFolder && f.RelativeComparablePath == folder.RelativeComparablePath) == false)
-                            foldersToCreate.Add($"{AppState.Settings.Paths.RemoteRootPath.SetSmbPathSeparators().TrimPath()}\\{folder.RelativeComparablePath.SetSmbPathSeparators().TrimPath()}");
+                            foldersToCreate.Add($"{AppState.Settings.ServerConnection.RemoteRootPath}\\{folder.RelativeComparablePath.SetSmbPathSeparators().TrimPath()}");
                     }
 
                     var fileStore = Storage.GetFileStore(AppState, client);
@@ -700,7 +698,7 @@ public sealed class AppRunner
 
             #region Deploy Safe Copy Files
 
-            if (AppState.Settings.Paths.SafeCopyFilePaths.Count != 0)
+            if (AppState.Settings.Deployment.OnlineCopyFilePaths.Count != 0)
             {
                 await Spinner.StartAsync("Deploying safe copy files...", async spinner =>
                 {
@@ -715,12 +713,12 @@ public sealed class AppRunner
 
                     var spinnerText = spinner.Text;
 
-                    Parallel.For(0, AppState.Settings.Paths.SafeCopyFilePaths.Count, new ParallelOptions { MaxDegreeOfParallelism = AppState.Settings.MaxThreadCount }, (i, state) =>
+                    Parallel.For(0, AppState.Settings.Deployment.OnlineCopyFilePaths.Count, new ParallelOptions { MaxDegreeOfParallelism = AppState.Settings.MaxThreadCount }, (i, state) =>
                     {
                         if (AppState.CancellationTokenSource.IsCancellationRequested || state.ShouldExitCurrentIteration || state.IsStopped)
                             return;
 
-                        var item = AppState.Settings.Paths.SafeCopyFilePaths[i];
+                        var item = AppState.Settings.Deployment.OnlineCopyFilePaths[i];
                         var localFile = AppState.LocalFiles.FirstOrDefault(f => f.RelativeComparablePath == item && f.IsDeleted == false);
 
                         if (localFile is null)
@@ -742,7 +740,7 @@ public sealed class AppRunner
                     if (AppState.CancellationTokenSource.IsCancellationRequested)
                         spinner.Fail($"{spinnerText} Failed!");
                     else
-                        spinner.Text = $"{spinnerText} {AppState.Settings.Paths.SafeCopyFilePaths.Count:N0} file{(AppState.Settings.Paths.SafeCopyFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                        spinner.Text = $"{spinnerText} {AppState.Settings.Deployment.OnlineCopyFilePaths.Count:N0} file{(AppState.Settings.Deployment.OnlineCopyFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
 
                     await Task.CompletedTask;
 
