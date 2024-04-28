@@ -21,6 +21,9 @@ WriteRetryDelaySeconds: 10
 # Number of attempts to write before giving up; default is 10
 RetryCount: 10
 
+# Number of parallel network requests; default is 5
+MaxThreadCount: 5
+
 ServerConnection:
     
     ServerAddress: 127.0.0.1

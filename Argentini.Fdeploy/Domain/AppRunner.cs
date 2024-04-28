@@ -121,6 +121,9 @@ public sealed class AppRunner
         var deserializer = new DeserializerBuilder().IgnoreUnmatchedProperties().Build();
         
         AppState.Settings = deserializer.Deserialize<Settings>(yaml);
+
+        if (AppState.Settings.MaxThreadCount < 1)
+            AppState.Settings.MaxThreadCount = new Settings().MaxThreadCount;
         
         #endregion
 
@@ -640,7 +643,7 @@ public sealed class AppRunner
                     var filesToCopy = AppState.LocalFiles.ToList().Where(f => f is { IsFile: true, IsSafeCopy: true }).ToList();
                     var filesCopied = 0;
 
-                    Parallel.For(0, filesToCopy.Count, new ParallelOptions { MaxDegreeOfParallelism = 5 }, (i, state) =>
+                    Parallel.For(0, filesToCopy.Count, new ParallelOptions { MaxDegreeOfParallelism = AppState.Settings.MaxThreadCount }, (i, state) =>
                     {
                         if (AppState.CancellationTokenSource.IsCancellationRequested || state.ShouldExitCurrentIteration || state.IsStopped)
                             return;
@@ -695,7 +698,7 @@ public sealed class AppRunner
 
                     var spinnerText = spinner.Text;
 
-                    Parallel.For(0, AppState.Settings.Paths.SafeCopyFilePaths.Count, new ParallelOptions { MaxDegreeOfParallelism = 5 }, (i, state) =>
+                    Parallel.For(0, AppState.Settings.Paths.SafeCopyFilePaths.Count, new ParallelOptions { MaxDegreeOfParallelism = AppState.Settings.MaxThreadCount }, (i, state) =>
                     {
                         if (AppState.CancellationTokenSource.IsCancellationRequested || state.ShouldExitCurrentIteration || state.IsStopped)
                             return;
@@ -784,7 +787,7 @@ public sealed class AppRunner
 
                 if (itemCount > 0)
                 {
-                    Parallel.For(0, itemsToCopy.Count, new ParallelOptions { MaxDegreeOfParallelism = 5 }, (i, state) =>
+                    Parallel.For(0, itemsToCopy.Count, new ParallelOptions { MaxDegreeOfParallelism = AppState.Settings.MaxThreadCount }, (i, state) =>
                     {
                         if (AppState.CancellationTokenSource.IsCancellationRequested || state.ShouldExitCurrentIteration || state.IsStopped)
                             return;

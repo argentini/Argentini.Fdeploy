@@ -52,11 +52,8 @@ public static class Storage
         }
     }
 
-    public static void CopyFolder(AppState appState, string localSourcePath, string localDestinationPath, int maxTasks = 5)
+    public static void CopyFolder(AppState appState, string localSourcePath, string localDestinationPath)
     {
-        if (maxTasks < 1)
-            maxTasks = 2;
-
         // Get the subdirectories for the specified directory.
         var dir = new DirectoryInfo(localSourcePath);
 
@@ -82,7 +79,7 @@ public static class Storage
         // Get the files in the directory and copy them to the new location.
         var files = dir.GetFiles();
 
-        Parallel.For(0, files.Length, new ParallelOptions { MaxDegreeOfParallelism = maxTasks }, (i, state) =>
+        Parallel.For(0, files.Length, new ParallelOptions { MaxDegreeOfParallelism = appState.Settings.MaxThreadCount }, (i, state) =>
         {
             if (appState.CancellationTokenSource.IsCancellationRequested || state.ShouldExitCurrentIteration || state.IsStopped)
                 return;
@@ -107,14 +104,14 @@ public static class Storage
 
         var dirs = dir.GetDirectories();
 
-        Parallel.For(0, dirs.Length, new ParallelOptions { MaxDegreeOfParallelism = maxTasks }, (i, state) =>
+        Parallel.For(0, dirs.Length, new ParallelOptions { MaxDegreeOfParallelism = appState.Settings.MaxThreadCount }, (i, state) =>
         {
             if (appState.CancellationTokenSource.IsCancellationRequested || state.ShouldExitCurrentIteration || state.IsStopped)
                 return;
 
             var subdir = dirs[i];
             
-            CopyFolder(appState, subdir.FullName, Path.Combine(localDestinationPath, subdir.Name), maxTasks);
+            CopyFolder(appState, subdir.FullName, Path.Combine(localDestinationPath, subdir.Name));
         });
     }
     
@@ -272,12 +269,19 @@ public static class Storage
 
         for (var attempt = 0; attempt < retries; attempt++)
         {
-            fileStore = client.TreeConnect(appState.Settings.ServerConnection.ShareName, out var status);
+            try
+            {
+                fileStore = client.TreeConnect(appState.Settings.ServerConnection.ShareName, out var status);
 
-            if (status == NTStatus.STATUS_SUCCESS)
-                break;
+                if (status == NTStatus.STATUS_SUCCESS)
+                    break;
 
-            Thread.Sleep(appState.Settings.WriteRetryDelaySeconds * 1000);
+                Thread.Sleep(appState.Settings.WriteRetryDelaySeconds * 1000);
+            }
+            catch
+            {
+                Thread.Sleep(appState.Settings.WriteRetryDelaySeconds * 1000);
+            }
         }
 
         if (fileStore is not null)
@@ -293,7 +297,7 @@ public static class Storage
     
     #region Server Storage
     
-    public static void RecurseServerPath(AppState appState, string path, bool includeHidden = false, int maxTasks = 8)
+    public static void RecurseServerPath(AppState appState, string path, bool includeHidden = false)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -307,9 +311,6 @@ public static class Storage
         
         if (fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
-
-        if (maxTasks < 1)
-            maxTasks = 8;
 
         try
         {
@@ -369,7 +370,7 @@ public static class Storage
 
             if (files.Count != 0)
             {
-                Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = maxTasks }, (i, state) =>
+                Parallel.For(0, files.Count, new ParallelOptions { MaxDegreeOfParallelism = appState.Settings.MaxThreadCount }, (i, state) =>
                 {
                     if (appState.CancellationTokenSource.IsCancellationRequested || state.ShouldExitCurrentIteration || state.IsStopped)
                         return;
@@ -404,7 +405,7 @@ public static class Storage
             if (directories.Count == 0)
                 return;
 
-            Parallel.For(0, directories.Count, new ParallelOptions { MaxDegreeOfParallelism = maxTasks }, (i, state) =>
+            Parallel.For(0, directories.Count, new ParallelOptions { MaxDegreeOfParallelism = appState.Settings.MaxThreadCount }, (i, state) =>
             {
                 if (appState.CancellationTokenSource.IsCancellationRequested || state.ShouldExitCurrentIteration || state.IsStopped)
                     return;
@@ -426,7 +427,7 @@ public static class Storage
 
                     appState.ServerFiles.Add(fo);
 
-                    RecurseServerPath(appState, directoryPath, includeHidden, maxTasks);
+                    RecurseServerPath(appState, directoryPath, includeHidden);
                 }
                 catch
                 {
