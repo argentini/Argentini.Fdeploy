@@ -1,3 +1,4 @@
+using System.Net;
 using Argentini.Fdeploy.ConsoleBusy;
 using SMBLibrary.Client;
 using YamlDotNet.Serialization;
@@ -339,6 +340,22 @@ public sealed class AppRunner
 
         SMB2Client? client = null;
         
+        // Publish project
+        // Copy files/folders into publish folder
+        // Index local files (ignore rules)
+
+        // Verify connection
+        // Index server files (ignore rules)
+        // Safe copies (ignore rules)
+        
+        // OFFLINE
+        // Unsafe copies (ignore rules)
+        // Additional files/folder copies
+        // Process deletions (ignore rules)
+        // ONLINE
+
+        // Local cleanup
+
         #region Publish Project
 
         var sb = new StringBuilder();
@@ -767,6 +784,8 @@ public sealed class AppRunner
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
                     return;
+
+                await Task.Delay(AppState.Settings.ServerOfflineDelaySeconds * 1000);
             }
 
             #endregion
