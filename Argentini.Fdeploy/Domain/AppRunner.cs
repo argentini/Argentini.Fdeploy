@@ -584,7 +584,7 @@ public sealed class AppRunner
                 
                 if (AppState.Settings.Deployment.OnlineCopyFolderPaths.Count > 0)
                 {
-                    foreach (var folder in AppState.LocalFiles.ToList().Where(f => f is { IsFolder: true, IsSafeCopy: true }))
+                    foreach (var folder in AppState.LocalFiles.ToList().Where(f => f is { IsFolder: true, IsOnlineCopy: true }))
                     {
                         if (AppState.ServerFiles.Any(f => f.IsFolder && f.RelativeComparablePath == folder.RelativeComparablePath) == false)
                             foldersToCreate.Add($"{AppState.Settings.ServerConnection.RemoteRootPath}\\{folder.RelativeComparablePath.SetSmbPathSeparators().TrimPath()}");
@@ -606,7 +606,7 @@ public sealed class AppRunner
                         return;
                     }
 
-                    var filesToCopy = AppState.LocalFiles.ToList().Where(f => f is { IsFile: true, IsSafeCopy: true }).ToList();
+                    var filesToCopy = AppState.LocalFiles.ToList().Where(f => f is { IsFile: true, IsOnlineCopy: true }).ToList();
 
                     Parallel.For(0, filesToCopy.Count, new ParallelOptions { MaxDegreeOfParallelism = AppState.Settings.MaxThreadCount }, (i, state) =>
                     {
@@ -729,7 +729,7 @@ public sealed class AppRunner
 
                     var spinnerText = spinner.Text;
 
-                    await Storage.CreateOfflineFileAsync(AppState, fileStore);
+                    await Storage.TakeServerOfflineAsync(AppState, fileStore);
 
                     if (AppState.CancellationTokenSource.IsCancellationRequested)
                     {
@@ -762,7 +762,7 @@ public sealed class AppRunner
 
             Timer.Restart();
             
-            var itemsToCopy = AppState.LocalFiles.Where(f => f is { IsFile: true, IsSafeCopy: false }).ToList();
+            var itemsToCopy = AppState.LocalFiles.Where(f => f is { IsFile: true, IsOnlineCopy: false }).ToList();
             var itemCount = itemsToCopy.Count;
 
             await Spinner.StartAsync("Deploy files...", async spinner =>
@@ -784,11 +784,12 @@ public sealed class AppRunner
                         try
                         {
                             var fo = itemsToCopy[i];
+
                             var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == fo.RelativeComparablePath && f.IsDeleted == false);
 
                             if (serverFile is not null && serverFile.LastWriteTime == fo.LastWriteTime && serverFile.FileSizeBytes == fo.FileSizeBytes)
                                 return;
-
+                           
                             innerClient = Storage.ConnectClient(AppState);
                         
                             if (innerClient is null || AppState.CancellationTokenSource.IsCancellationRequested)
@@ -930,7 +931,7 @@ public sealed class AppRunner
                         }
                     }
 
-                    await Storage.DeleteOfflineFileAsync(AppState, fileStore);
+                    await Storage.BringServerOnlineAsync(AppState, fileStore);
                     
                     if (AppState.CancellationTokenSource.IsCancellationRequested)
                     {

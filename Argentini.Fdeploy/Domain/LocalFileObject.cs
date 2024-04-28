@@ -2,7 +2,7 @@ namespace Argentini.Fdeploy.Domain;
 
 public sealed class LocalFileObject : FileObject
 {
-    public bool IsSafeCopy { get; }
+    public bool IsOnlineCopy { get; }
     public string AbsoluteServerPath { get; }
 
     public LocalFileObject(AppState appState, string absolutePath, long lastWriteTime, long fileSizeBytes, bool isFile, string rootPath)
@@ -26,7 +26,7 @@ public sealed class LocalFileObject : FileObject
             if (RelativeComparablePath.StartsWith(staticFolderPath) == false)
                 continue;
 
-            IsSafeCopy = true;
+            IsOnlineCopy = true;
             return;
         }
         
@@ -35,7 +35,7 @@ public sealed class LocalFileObject : FileObject
             if (RelativeComparablePath != staticFilePath)
                 continue;
 
-            IsSafeCopy = true;
+            IsOnlineCopy = true;
             return;
         }
     }

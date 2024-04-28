@@ -561,7 +561,7 @@ public static class Storage
         
         for (var attempt = 0; attempt < retries; attempt++)
         {
-            var status = fileStore.CreateFile(out var handle, out _, sfo.AbsolutePath.TrimPath(), AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+            var status = fileStore.CreateFile(out var handle, out _, sfo is ServerFileObject serverFileObject ? serverFileObject.AbsolutePath : ((LocalFileObject)sfo).AbsoluteServerPath, AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
 
             if (status == NTStatus.STATUS_SUCCESS)
             {
@@ -575,7 +575,7 @@ public static class Storage
             }
             else
             {
-                var fileExists = ServerFileExists(appState, fileStore, sfo.AbsolutePath.TrimPath());
+                var fileExists = ServerFileExists(appState, fileStore, sfo.AbsolutePath);
         
                 if (fileExists == false)
                     success = true;
@@ -626,7 +626,7 @@ public static class Storage
         
         for (var attempt = 0; attempt < retries; attempt++)
         {
-            var status = fileStore.CreateFile(out var handle, out _, sfo.AbsolutePath.TrimPath(), AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+            var status = fileStore.CreateFile(out var handle, out _, sfo.AbsolutePath, AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
 
             if (status == NTStatus.STATUS_SUCCESS)
             {
@@ -640,7 +640,7 @@ public static class Storage
             }
             else
             {
-                var folderExists = ServerFolderExists(appState, fileStore, sfo.AbsolutePath.TrimPath());
+                var folderExists = ServerFolderExists(appState, fileStore, sfo.AbsolutePath);
 
                 if (folderExists == false)
                     success = true;
@@ -686,7 +686,7 @@ public static class Storage
         if (fileStore is null)
             return;
 
-        var folderExists = ServerFolderExists(appState, fileStore, sfo.AbsolutePath.TrimPath());
+        var folderExists = ServerFolderExists(appState, fileStore, sfo.AbsolutePath);
         
         if (folderExists == false)
             return;
@@ -878,7 +878,7 @@ public static class Storage
     
     #region Offline Support
     
-    public static async ValueTask CreateOfflineFileAsync(AppState appState, ISMBFileStore? fileStore)
+    public static async ValueTask TakeServerOfflineAsync(AppState appState, ISMBFileStore? fileStore)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -942,7 +942,7 @@ public static class Storage
         }
     }
     
-    public static async ValueTask DeleteOfflineFileAsync(AppState appState, ISMBFileStore? fileStore)
+    public static async ValueTask BringServerOnlineAsync(AppState appState, ISMBFileStore? fileStore)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
