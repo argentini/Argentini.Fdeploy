@@ -890,6 +890,16 @@ public static class Strings
         source.AddRange(list);
     }
 
+    public static void NormalizePaths(this IEnumerable<string> source)
+    {
+        var list = new List<string>();
+        
+        foreach (var path in source)
+            list.Add(NormalizePath(path));
+
+        source = list;
+    }
+
     public static string GetLastPathSegment(this string filePath)
     {
         if (filePath.IndexOf('\\') > -1)

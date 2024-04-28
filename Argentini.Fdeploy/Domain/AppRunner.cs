@@ -571,8 +571,7 @@ public sealed class AppRunner
                     {
                         foreach (var subitem in itemsToDelete.ToList().OrderByDescending(o => o.Level))
                         {
-                            if (subitem.Level > item.Level &&
-                                subitem.RelativeComparablePath.StartsWith(item.RelativeComparablePath))
+                            if (subitem.Level > item.Level && subitem.RelativeComparablePath.StartsWith(item.RelativeComparablePath))
                                 itemsToDelete.Remove(subitem);
                         }
                     }
@@ -641,17 +640,21 @@ public sealed class AppRunner
                     var filesToCopy = AppState.LocalFiles.ToList().Where(f => f is { IsFile: true, IsSafeCopy: true }).ToList();
                     var filesCopied = 0;
 
-                    foreach (var file in filesToCopy)
+                    Parallel.For(0, filesToCopy.Count, new ParallelOptions { MaxDegreeOfParallelism = 5 }, (i, state) =>
                     {
+                        if (AppState.CancellationTokenSource.IsCancellationRequested || state.ShouldExitCurrentIteration || state.IsStopped)
+                            return;
+
+                        var file = filesToCopy[i];
                         var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == file.RelativeComparablePath && f.IsDeleted == false);
 
                         if (serverFile is not null && serverFile.LastWriteTime == file.LastWriteTime && serverFile.FileSizeBytes == file.FileSizeBytes)
-                            continue;
+                            return;
 
                         spinner.Text = $"{spinnerText} {file.FileNameOrPathSegment}...";
-                        await Storage.CopyFileAsync(AppState, fileStore, file);
+                        Storage.CopyFile(AppState, fileStore, file);
                         filesCopied++;
-                    }
+                    });
 
                     if (AppState.CancellationTokenSource.IsCancellationRequested)
                     {
@@ -664,6 +667,8 @@ public sealed class AppRunner
                         else
                             spinner.Text = $"{spinnerText} Nothing to copy... Success!";
                     }
+
+                    await Task.CompletedTask;
 
                 }, Patterns.Dots, Patterns.Line);
 
@@ -690,30 +695,36 @@ public sealed class AppRunner
 
                     var spinnerText = spinner.Text;
 
-                    foreach (var item in AppState.Settings.Paths.SafeCopyFilePaths)
+                    Parallel.For(0, AppState.Settings.Paths.SafeCopyFilePaths.Count, new ParallelOptions { MaxDegreeOfParallelism = 5 }, (i, state) =>
                     {
+                        if (AppState.CancellationTokenSource.IsCancellationRequested || state.ShouldExitCurrentIteration || state.IsStopped)
+                            return;
+
+                        var item = AppState.Settings.Paths.SafeCopyFilePaths[i];
                         var localFile = AppState.LocalFiles.FirstOrDefault(f => f.RelativeComparablePath == item && f.IsDeleted == false);
 
                         if (localFile is null)
                         {
                             spinner.Fail($"{spinnerText} {item.GetLastPathSegment()}... Failed!");
                             AppState.Exceptions.Add($"Local file does not exist: `{item}`");
-                            await AppState.CancellationTokenSource.CancelAsync();
-                            break;
+                            AppState.CancellationTokenSource.Cancel();
+                            return;
                         }
                         
                         var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == localFile.RelativeComparablePath && f.IsDeleted == false);
 
                         if (serverFile is not null && serverFile.LastWriteTime == localFile.LastWriteTime && serverFile.FileSizeBytes == localFile.FileSizeBytes)
-                            continue;
+                            return;
                         
-                        await Storage.CopyFileAsync(AppState, fileStore, localFile);
-                    }
+                        Storage.CopyFile(AppState, fileStore, localFile);
+                    });
 
                     if (AppState.CancellationTokenSource.IsCancellationRequested)
                         spinner.Fail($"{spinnerText} Failed!");
                     else
                         spinner.Text = $"{spinnerText} {AppState.Settings.Paths.SafeCopyFilePaths.Count:N0} file{(AppState.Settings.Paths.SafeCopyFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+
+                    await Task.CompletedTask;
 
                 }, Patterns.Dots, Patterns.Line);
 
@@ -773,25 +784,46 @@ public sealed class AppRunner
 
                 if (itemCount > 0)
                 {
-                    var fileStore = Storage.GetFileStore(AppState, client);
-
-                    if (fileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
-                        return;
-
-                    foreach (var fo in itemsToCopy)
+                    Parallel.For(0, itemsToCopy.Count, new ParallelOptions { MaxDegreeOfParallelism = 5 }, (i, state) =>
                     {
-                        var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == fo.RelativeComparablePath && f.IsDeleted == false);
+                        if (AppState.CancellationTokenSource.IsCancellationRequested || state.ShouldExitCurrentIteration || state.IsStopped)
+                            return;
 
-                        if (serverFile is not null && serverFile.LastWriteTime == fo.LastWriteTime && serverFile.FileSizeBytes == fo.FileSizeBytes)
-                            continue;
+                        var innerClient = Storage.ConnectClient(AppState);
 
-                        await Storage.CopyFileAsync(AppState, fileStore, fo);
+                        if (innerClient is null || AppState.CancellationTokenSource.IsCancellationRequested)
+                            return;
 
-                        if (AppState.CancellationTokenSource.IsCancellationRequested)
-                            break;
+                        try
+                        {
+                            var fileStore = Storage.GetFileStore(AppState, innerClient);
 
-                        filesCopied++;
-                    }
+                            if (fileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
+                                return;
+
+                            var fo = itemsToCopy[i];
+                            var serverFile = AppState.ServerFiles.FirstOrDefault(f =>
+                                f.RelativeComparablePath == fo.RelativeComparablePath && f.IsDeleted == false);
+
+                            if (serverFile is not null && serverFile.LastWriteTime == fo.LastWriteTime &&
+                                serverFile.FileSizeBytes == fo.FileSizeBytes)
+                                return;
+
+                            Storage.CopyFile(AppState, fileStore, fo);
+
+                            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                            {
+                                state.Stop();
+                                return;
+                            }
+
+                            filesCopied++;
+                        }
+                        finally
+                        {
+                            Storage.DisconnectClient(innerClient);
+                        }
+                    });
 
                     if (AppState.CancellationTokenSource.IsCancellationRequested)
                         spinner.Fail($"{spinnerText} Failed!");
@@ -802,6 +834,8 @@ public sealed class AppRunner
                 {
                     spinner.Text = $"{spinnerText} no files to update... Success!";
                 }
+
+                await Task.CompletedTask;
 
             }, Patterns.Dots, Patterns.Line);
 

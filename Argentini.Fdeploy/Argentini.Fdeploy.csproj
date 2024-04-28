@@ -55,6 +55,4 @@
         <None Include="fdeploy-icon.png" Pack="true" PackagePath="" />
     </ItemGroup>
     
-    
-    
 </Project>

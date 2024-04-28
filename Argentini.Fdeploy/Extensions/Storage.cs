@@ -711,12 +711,12 @@ public static class Storage
         }
     }
     
-    public static async ValueTask CopyFileAsync(AppState appState, ISMBFileStore? fileStore, LocalFileObject fo)
+    public static void CopyFile(AppState appState, ISMBFileStore? fileStore, LocalFileObject fo)
     {
-        await CopyFileAsync(appState, fileStore, fo.AbsolutePath, fo.AbsoluteServerPath, fo.LastWriteTime);
+        CopyFile(appState, fileStore, fo.AbsolutePath, fo.AbsoluteServerPath, fo.LastWriteTime);
     }
 
-    public static async ValueTask CopyFileAsync(AppState appState, ISMBFileStore? fileStore, string localFilePath, string serverFilePath, long fileTime = -1, long fileSizeBytes = -1)
+    public static void CopyFile(AppState appState, ISMBFileStore? fileStore, string localFilePath, string serverFilePath, long fileTime = -1, long fileSizeBytes = -1)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -729,7 +729,7 @@ public static class Storage
         if (File.Exists(localFilePath) == false)
         {
             appState.Exceptions.Add($"File `{localFilePath}` does not exist");
-            await appState.CancellationTokenSource.CancelAsync();
+            appState.CancellationTokenSource.Cancel();
             return;
         }
      
@@ -737,6 +737,9 @@ public static class Storage
 
         if (spinnerText.IndexOf("...", StringComparison.Ordinal) > 0)
             spinnerText = spinnerText[..spinnerText.IndexOf("...", StringComparison.Ordinal)] + "...";
+        
+        if (appState.CurrentSpinner is not null)
+            appState.CurrentSpinner.Text = $"{spinnerText} {localFilePath.GetLastPathSegment()} (0%)...";
         
         serverFilePath = serverFilePath.FormatServerPath(appState);
         
@@ -808,32 +811,32 @@ public static class Storage
                     if (appState.CurrentSpinner is not null)
                         appState.CurrentSpinner.Text = $"{spinnerText} Retry {attempt + 1} ({x:N0})...";
 
-                    await Task.Delay(1000);
+                    Thread.Sleep(1000);
                 }
             }
 
             if (success == false)
             {
                 appState.Exceptions.Add($"Failed to copy file {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{serverFilePath}`");
-                await appState.CancellationTokenSource.CancelAsync();
+                appState.CancellationTokenSource.Cancel();
                 return;
             }
             
-            await ChangeModifyDateAsync(appState, fileStore, serverFilePath, fileTime);
+            ChangeModifyDate(appState, fileStore, serverFilePath, fileTime);
         }
         catch
         {
             appState.Exceptions.Add($"Failed to copy file `{serverFilePath}`");
-            await appState.CancellationTokenSource.CancelAsync();
+            appState.CancellationTokenSource.Cancel();
         }
     }
     
-    public static async ValueTask ChangeModifyDateAsync(AppState appState, ISMBFileStore? fileStore, LocalFileObject fo)
+    public static void ChangeModifyDate(AppState appState, ISMBFileStore? fileStore, LocalFileObject fo)
     {
-        await ChangeModifyDateAsync(appState, fileStore, fo.AbsoluteServerPath, fo.LastWriteTime);
+        ChangeModifyDate(appState, fileStore, fo.AbsoluteServerPath, fo.LastWriteTime);
     }    
 
-    public static async ValueTask ChangeModifyDateAsync(AppState appState, ISMBFileStore? fileStore, string serverFilePath, long fileTime)
+    public static void ChangeModifyDate(AppState appState, ISMBFileStore? fileStore, string serverFilePath, long fileTime)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -857,13 +860,13 @@ public static class Storage
             if (status != NTStatus.STATUS_SUCCESS)
             {
                 appState.Exceptions.Add($"Failed to set last write time for file `{serverFilePath}`");
-                await appState.CancellationTokenSource.CancelAsync();
+                appState.CancellationTokenSource.Cancel();
             }
         }
         else
         {
             appState.Exceptions.Add($"Failed to prepare file for last write time set `{serverFilePath}`");
-            await appState.CancellationTokenSource.CancelAsync();
+            appState.CancellationTokenSource.Cancel();
         }
         
         if (handle is not null)
