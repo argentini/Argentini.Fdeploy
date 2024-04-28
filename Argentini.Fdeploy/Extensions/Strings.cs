@@ -938,4 +938,9 @@ public static class Strings
         
         return $"{elapsed.Days:N0}d {elapsed.Hours:N0}h {elapsed.Minutes:N0}m {elapsed.Seconds:N0}s left";
     }
+
+    public static string Pluralize(this int value, string singular, string plural)
+    {
+        return value == 1 ? singular : plural;
+    }
 }

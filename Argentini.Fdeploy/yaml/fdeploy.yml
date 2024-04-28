@@ -9,8 +9,11 @@ DeleteOrphans: true
 # During deployment take the server offline using a file named app_offline.htm; default is true
 TakeServerOffline: true
 
-# Seconds to wait after taking the server offline; default is 10
-ServerOfflineDelaySeconds: 10
+# Seconds to wait after taking the server offline; default is 0
+ServerOfflineDelaySeconds: 0
+
+# Seconds to wait before bringing the server online; default is 0
+ServerOnlineDelaySeconds: 0
 
 # Seconds to wait after a failed write; default is 10
 WriteRetryDelaySeconds: 10

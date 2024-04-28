@@ -339,21 +339,30 @@ public sealed class AppRunner
 
         SMB2Client? client = null;
         
-        // Publish project
-        // Copy files/folders into publish folder
-        // Index local files (ignore rules)
+        #region Local Cleanup
 
-        // Verify connection
-        // Index server files (ignore rules)
-        // Online copies (ignore rules)
+        if (Directory.Exists(AppState.PublishPath))
+        {
+            await Spinner.StartAsync("Delete existing publish folder...", async spinner =>
+            {
+                AppState.CurrentSpinner = spinner;
+
+                var spinnerText = spinner.Text;
+
+                Directory.Delete(AppState.PublishPath, true);
+
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                    spinner.Fail($"{spinnerText} Failed!");
+                else
+                    spinner.Text = $"{spinnerText} Success!";
+
+                await Task.CompletedTask;
+
+            }, Patterns.Dots, Patterns.Line);
+        }
+
+        #endregion
         
-        // OFFLINE
-        // Offline copies (ignore rules)
-        // Process deletions (ignore rules)
-        // ONLINE
-
-        // Local cleanup
-
         #region Publish Project
 
         var sb = new StringBuilder();
@@ -429,6 +438,8 @@ public sealed class AppRunner
                         File.Copy(sourceFilePath, destFilePath, true);
                         
                         spinner.Text = $"{spinnerText} {item.GetLastPathSegment()}...";
+
+                        await Task.Delay(5);
                     }
 
                     catch
@@ -440,7 +451,7 @@ public sealed class AppRunner
                 }
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested == false)
-                    spinner.Text = $"{spinnerText} {AppState.Settings.Deployment.OnlineCopyFilePaths.Count:N0} file{(AppState.Settings.Deployment.OnlineCopyFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                    spinner.Text = $"{spinnerText} {AppState.Settings.Project.CopyFilesToPublishFolder.Count:N0} {AppState.Settings.Project.CopyFilesToPublishFolder.Count.Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
 
             }, Patterns.Dots, Patterns.Line);
 
@@ -472,6 +483,7 @@ public sealed class AppRunner
                         Storage.CopyFolder(AppState, $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{item}", $"{AppState.PublishPath}{Path.DirectorySeparatorChar}{item}");
 
                         spinner.Text = $"{spinnerText} {item.GetLastPathSegment()}...";
+                        await Task.Delay(5);
                     }
 
                     catch
@@ -483,7 +495,7 @@ public sealed class AppRunner
                 }
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested == false)
-                    spinner.Text = $"{spinnerText} {AppState.Settings.Deployment.OnlineCopyFilePaths.Count:N0} folder{(AppState.Settings.Deployment.OnlineCopyFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                    spinner.Text = $"{spinnerText} {AppState.Settings.Project.CopyFoldersToPublishFolder.Count:N0} {AppState.Settings.Project.CopyFoldersToPublishFolder.Count.Pluralize("folder", "folders")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
 
             }, Patterns.Dots, Patterns.Line);
 
@@ -506,7 +518,7 @@ public sealed class AppRunner
             if (AppState.CancellationTokenSource.IsCancellationRequested)
                 spinner.Fail($"{spinnerText} Failed!");
             else        
-                spinner.Text = $"{spinnerText} {AppState.LocalFiles.Count(f => f.IsFile):N0} file{(AppState.LocalFiles.Count(f => f.IsFile) == 1 ? string.Empty : "s")}, {AppState.LocalFiles.Count(f => f.IsFolder):N0} folders ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                spinner.Text = $"{spinnerText} {AppState.LocalFiles.Count(f => f.IsFile):N0} {AppState.LocalFiles.Count(f => f.IsFile).Pluralize("file", "files")}, {AppState.LocalFiles.Count(f => f.IsFolder):N0} {AppState.LocalFiles.Count(f => f.IsFolder).Pluralize("folder", "folders")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
             
         }, Patterns.Dots, Patterns.Line);
        
@@ -542,7 +554,7 @@ public sealed class AppRunner
                     spinner.Fail($"{spinnerText} Failed!");
                 else
                     spinner.Text =
-                        $"{spinnerText} {AppState.ServerFiles.Count(f => f.IsFile):N0} file{(AppState.ServerFiles.Count(f => f.IsFile) == 1 ? string.Empty : "s")}, {AppState.ServerFiles.Count(f => f.IsFolder):N0} folders ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                        $"{spinnerText} {AppState.ServerFiles.Count(f => f.IsFile):N0} {AppState.ServerFiles.Count(f => f.IsFile).Pluralize("file", "files")}, {AppState.ServerFiles.Count(f => f.IsFolder):N0} {AppState.ServerFiles.Count(f => f.IsFolder).Pluralize("folder", "folders")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
 
                 await Task.CompletedTask;
 
@@ -553,84 +565,19 @@ public sealed class AppRunner
 
             #endregion
 
-            #region Process Deletions
+            #region Deploy Online Copy Folders
 
-            if (AppState.Settings.DeleteOrphans)
+            await Spinner.StartAsync("Deploying while online: folders...", async spinner =>
             {
-                var fileStore = Storage.GetFileStore(AppState, client);
+                var spinnerText = spinner.Text;
+                var foldersToCreate = new List<string>();
+                var filesCopied = 0;
 
-                if (fileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
-                    return;
-
-                await Spinner.StartAsync("Deleting orphaned files and folders...", async spinner =>
+                AppState.CurrentSpinner = spinner;
+                Timer.Restart();
+                
+                if (AppState.Settings.Deployment.OnlineCopyFolderPaths.Count > 0)
                 {
-                    var spinnerText = spinner.Text;
-
-                    AppState.CurrentSpinner = spinner;
-                    
-                    Timer.Restart();
-
-                    var itemsToDelete = AppState.ServerFiles.Except(AppState.LocalFiles, new FileObjectComparer()).Where(f => f.IsDeleted == false).ToList();
-
-                    // Remove paths that enclose ignore paths
-                    foreach (var item in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
-                    {
-                        foreach (var ignorePath in AppState.Settings.Deployment.IgnoreFolderPaths)
-                        {
-                            if (ignorePath.StartsWith(item.RelativeComparablePath) == false)
-                                continue;
-
-                            itemsToDelete.Remove(item);
-                        }
-                    }
-
-                    // Remove descendants of folders to be deleted
-                    foreach (var item in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
-                    {
-                        foreach (var subitem in itemsToDelete.ToList().OrderByDescending(o => o.Level))
-                        {
-                            if (subitem.Level > item.Level && subitem.RelativeComparablePath.StartsWith(item.RelativeComparablePath))
-                                itemsToDelete.Remove(subitem);
-                        }
-                    }
-
-                    foreach (var item in itemsToDelete)
-                    {
-                        if (item.IsFile)
-                            await Storage.DeleteServerFileAsync(AppState, fileStore, item);
-                        else
-                            await Storage.DeleteServerFolderRecursiveAsync(AppState, fileStore, item);
-
-                        if (AppState.CancellationTokenSource.IsCancellationRequested)
-                            break;
-                    }
-
-                    if (AppState.CancellationTokenSource.IsCancellationRequested)
-                        spinner.Fail($"{spinnerText} Failed!");
-                    else
-                        spinner.Text = $"Deleted orphan files and folders ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-
-                }, Patterns.Dots, Patterns.Line);
-
-                if (AppState.CancellationTokenSource.IsCancellationRequested)
-                    return;
-            }
-
-            #endregion
-
-            #region Deploy Safe Copy Folders
-
-            if (AppState.Settings.Deployment.OnlineCopyFolderPaths.Count != 0)
-            {
-                await Spinner.StartAsync("Deploying safe copy folders...", async spinner =>
-                {
-                    var spinnerText = spinner.Text;
-                    var foldersToCreate = new List<string>();
-
-                    AppState.CurrentSpinner = spinner;
-
-                    Timer.Restart();
-                    
                     foreach (var folder in AppState.LocalFiles.ToList().Where(f => f is { IsFolder: true, IsSafeCopy: true }))
                     {
                         if (AppState.ServerFiles.Any(f => f.IsFolder && f.RelativeComparablePath == folder.RelativeComparablePath) == false)
@@ -644,8 +591,6 @@ public sealed class AppRunner
 
                     foreach (var folder in foldersToCreate)
                     {
-                        spinner.Text = $"{spinnerText} create: {folder}...";
-
                         Storage.EnsureServerPathExists(AppState, fileStore, folder);
                     }
 
@@ -656,7 +601,6 @@ public sealed class AppRunner
                     }
 
                     var filesToCopy = AppState.LocalFiles.ToList().Where(f => f is { IsFile: true, IsSafeCopy: true }).ToList();
-                    var filesCopied = 0;
 
                     Parallel.For(0, filesToCopy.Count, new ParallelOptions { MaxDegreeOfParallelism = AppState.Settings.MaxThreadCount }, (i, state) =>
                     {
@@ -673,45 +617,45 @@ public sealed class AppRunner
                         Storage.CopyFile(AppState, fileStore, file);
                         filesCopied++;
                     });
-
-                    if (AppState.CancellationTokenSource.IsCancellationRequested)
-                    {
-                        spinner.Fail($"{spinnerText} Failed!");
-                    }
-                    else
-                    {
-                        if (filesCopied != 0)
-                            spinner.Text = $"{spinnerText} {filesToCopy.Count:N0} file{(filesToCopy.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-                        else
-                            spinner.Text = $"{spinnerText} Nothing to copy... Success!";
-                    }
-
-                    await Task.CompletedTask;
-
-                }, Patterns.Dots, Patterns.Line);
+                }
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
-                    return;
-            }
+                {
+                    spinner.Fail($"{spinnerText} Failed!");
+                }
+                else
+                {
+                    if (filesCopied != 0)
+                        spinner.Text = $"{spinnerText} {AppState.Settings.Deployment.OnlineCopyFolderPaths.Count:N0} {AppState.Settings.Deployment.OnlineCopyFolderPaths.Count.Pluralize("folder", "folders")} with {filesCopied:N0} {filesCopied.Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                    else
+                        spinner.Text = $"{spinnerText} Nothing to copy... Success!";
+                }
+
+                await Task.CompletedTask;
+
+            }, Patterns.Dots, Patterns.Line);
+
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                return;
 
             #endregion
 
-            #region Deploy Safe Copy Files
+            #region Deploy Online Copy Files
 
-            if (AppState.Settings.Deployment.OnlineCopyFilePaths.Count != 0)
+            await Spinner.StartAsync("Deploying while online: files...", async spinner =>
             {
-                await Spinner.StartAsync("Deploying safe copy files...", async spinner =>
-                {
-                    AppState.CurrentSpinner = spinner;
+                var spinnerText = spinner.Text;
+                var filesCopied = 0;
 
-                    Timer.Restart();
-                    
+                AppState.CurrentSpinner = spinner;
+                Timer.Restart();
+
+                if (AppState.Settings.Deployment.OnlineCopyFilePaths.Count > 0)
+                {
                     var fileStore = Storage.GetFileStore(AppState, client);
 
                     if (fileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
                         return;
-
-                    var spinnerText = spinner.Text;
 
                     Parallel.For(0, AppState.Settings.Deployment.OnlineCopyFilePaths.Count, new ParallelOptions { MaxDegreeOfParallelism = AppState.Settings.MaxThreadCount }, (i, state) =>
                     {
@@ -735,20 +679,28 @@ public sealed class AppRunner
                             return;
                         
                         Storage.CopyFile(AppState, fileStore, localFile);
+                        filesCopied++;
                     });
-
-                    if (AppState.CancellationTokenSource.IsCancellationRequested)
-                        spinner.Fail($"{spinnerText} Failed!");
-                    else
-                        spinner.Text = $"{spinnerText} {AppState.Settings.Deployment.OnlineCopyFilePaths.Count:N0} file{(AppState.Settings.Deployment.OnlineCopyFilePaths.Count == 1 ? string.Empty : "s")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-
-                    await Task.CompletedTask;
-
-                }, Patterns.Dots, Patterns.Line);
+                }
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
-                    return;
-            }
+                {
+                    spinner.Fail($"{spinnerText} Failed!");
+                }
+                else
+                {
+                    if (filesCopied != 0)
+                        spinner.Text = $"{spinnerText} {filesCopied:N0} {filesCopied.Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                    else
+                        spinner.Text = $"{spinnerText} Nothing to copy... Success!";
+                }
+
+                await Task.CompletedTask;
+
+            }, Patterns.Dots, Patterns.Line);
+
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                return;
 
             #endregion
 
@@ -774,21 +726,33 @@ public sealed class AppRunner
                     await Storage.CreateOfflineFileAsync(AppState, fileStore);
 
                     if (AppState.CancellationTokenSource.IsCancellationRequested)
+                    {
                         spinner.Fail($"{spinnerText} Failed!");
+                    }
                     else
+                    {
+                        if (AppState.Settings.ServerOfflineDelaySeconds > 0)
+                        {
+                            for (var i = AppState.Settings.ServerOfflineDelaySeconds; i >= 0; i--)
+                            {
+                                spinner.Text = $"{spinnerText} Done... Waiting ({i:N0})";
+
+                                await Task.Delay(1000);
+                            }
+                        }
+
                         spinner.Text = $"{spinnerText} Success!";
+                    }
 
                 }, Patterns.Dots, Patterns.Line);
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
                     return;
-
-                await Task.Delay(AppState.Settings.ServerOfflineDelaySeconds * 1000);
             }
 
             #endregion
 
-            #region Deploy Files!
+            #region Deploy Offline Files
 
             Timer.Restart();
             
@@ -848,7 +812,7 @@ public sealed class AppRunner
                     if (AppState.CancellationTokenSource.IsCancellationRequested)
                         spinner.Fail($"{spinnerText} Failed!");
                     else
-                        spinner.Text = $"{spinnerText} {filesCopied:N0} file{(filesCopied == 1 ? string.Empty : "s")} updated ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                        spinner.Text = $"{spinnerText} {filesCopied:N0} {filesCopied.Pluralize("file", "files")} updated ({Timer.Elapsed.FormatElapsedTime()})... Success!";
                 }
                 else
                 {
@@ -864,6 +828,79 @@ public sealed class AppRunner
 
             #endregion
 
+            #region Process Deletions
+
+            if (AppState.Settings.DeleteOrphans)
+            {
+                var fileStore = Storage.GetFileStore(AppState, client);
+
+                if (fileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
+                    return;
+
+                await Spinner.StartAsync("Deleting orphaned files and folders...", async spinner =>
+                {
+                    var spinnerText = spinner.Text;
+                    var filesRemoved = 0;
+                    var foldersRemoved = 0;
+
+                    AppState.CurrentSpinner = spinner;
+                    
+                    Timer.Restart();
+
+                    var itemsToDelete = AppState.ServerFiles.Except(AppState.LocalFiles, new FileObjectComparer()).Where(f => f.IsDeleted == false).ToList();
+
+                    // Remove paths that enclose ignore paths
+                    foreach (var item in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
+                    {
+                        foreach (var ignorePath in AppState.Settings.Deployment.IgnoreFolderPaths)
+                        {
+                            if (ignorePath.StartsWith(item.RelativeComparablePath) == false)
+                                continue;
+
+                            itemsToDelete.Remove(item);
+                        }
+                    }
+
+                    // Remove descendants of folders to be deleted
+                    foreach (var item in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
+                    {
+                        foreach (var subitem in itemsToDelete.ToList().OrderByDescending(o => o.Level))
+                        {
+                            if (subitem.Level > item.Level && subitem.RelativeComparablePath.StartsWith(item.RelativeComparablePath))
+                                itemsToDelete.Remove(subitem);
+                        }
+                    }
+
+                    foreach (var item in itemsToDelete)
+                    {
+                        if (item.IsFile)
+                        {
+                            await Storage.DeleteServerFileAsync(AppState, fileStore, item);
+                            filesRemoved++;
+                        }
+                        else
+                        {
+                            await Storage.DeleteServerFolderRecursiveAsync(AppState, fileStore, item);
+                            foldersRemoved++;
+                        }
+
+                        if (AppState.CancellationTokenSource.IsCancellationRequested)
+                            break;
+                    }
+
+                    if (AppState.CancellationTokenSource.IsCancellationRequested)
+                        spinner.Fail($"{spinnerText} Failed!");
+                    else
+                        spinner.Text = $"Deleted {filesRemoved:N0} orphaned {filesRemoved.Pluralize("file", "files")} and {foldersRemoved:N0} {foldersRemoved.Pluralize("folder", "folders")} of orphaned files ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+
+                }, Patterns.Dots, Patterns.Line);
+
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                    return;
+            }
+
+            #endregion
+            
             #region Bring Server Online
 
             if (AppState.Settings.TakeServerOffline)
@@ -878,12 +915,25 @@ public sealed class AppRunner
                     if (fileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
                         return;
 
-                    await Storage.DeleteOfflineFileAsync(AppState, fileStore);
+                    if (AppState.Settings.ServerOnlineDelaySeconds > 0)
+                    {
+                        for (var i = AppState.Settings.ServerOnlineDelaySeconds; i >= 0; i--)
+                        {
+                            spinner.Text = $"{spinnerText}... Waiting ({i:N0})";
+                            await Task.Delay(1000);
+                        }
+                    }
 
+                    await Storage.DeleteOfflineFileAsync(AppState, fileStore);
+                    
                     if (AppState.CancellationTokenSource.IsCancellationRequested)
+                    {
                         spinner.Fail($"{spinnerText} Failed!");
+                    }
                     else
+                    {
                         spinner.Text = $"{spinnerText} Success!";
+                    }
 
                 }, Patterns.Dots, Patterns.Line);
 

@@ -5,7 +5,8 @@ public sealed class Settings
     public bool DeleteOrphans { get; set; } = true;
     public bool TakeServerOffline { get; set; } = true;
     
-    public int ServerOfflineDelaySeconds { get; set; } = 10;
+    public int ServerOfflineDelaySeconds { get; set; }
+    public int ServerOnlineDelaySeconds { get; set; }
     public int WriteRetryDelaySeconds { get; set; } = 10;
     public int RetryCount { get; set; } = 10;
     public int MaxThreadCount { get; set; } = 5;
