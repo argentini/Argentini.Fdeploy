@@ -789,26 +789,26 @@ public sealed class AppRunner
                         if (AppState.CancellationTokenSource.IsCancellationRequested || state.ShouldExitCurrentIteration || state.IsStopped)
                             return;
 
-                        var innerClient = Storage.ConnectClient(AppState);
-
-                        if (innerClient is null || AppState.CancellationTokenSource.IsCancellationRequested)
-                            return;
+                        SMB2Client? innerClient = null;
 
                         try
                         {
+                            var fo = itemsToCopy[i];
+                            var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == fo.RelativeComparablePath && f.IsDeleted == false);
+
+                            if (serverFile is not null && serverFile.LastWriteTime == fo.LastWriteTime && serverFile.FileSizeBytes == fo.FileSizeBytes)
+                                return;
+
+                            innerClient = Storage.ConnectClient(AppState);
+                        
+                            if (innerClient is null || AppState.CancellationTokenSource.IsCancellationRequested)
+                                return;
+
                             var fileStore = Storage.GetFileStore(AppState, innerClient);
 
                             if (fileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
                                 return;
-
-                            var fo = itemsToCopy[i];
-                            var serverFile = AppState.ServerFiles.FirstOrDefault(f =>
-                                f.RelativeComparablePath == fo.RelativeComparablePath && f.IsDeleted == false);
-
-                            if (serverFile is not null && serverFile.LastWriteTime == fo.LastWriteTime &&
-                                serverFile.FileSizeBytes == fo.FileSizeBytes)
-                                return;
-
+                            
                             Storage.CopyFile(AppState, fileStore, fo);
 
                             if (AppState.CancellationTokenSource.IsCancellationRequested)
