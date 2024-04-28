@@ -6,9 +6,9 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
 
-        <AssemblyVersion>1.0.0.0</AssemblyVersion>
-        <FileVersion>1.0.0.0</FileVersion>
-        <PackageVersion>1.0.0</PackageVersion>
+        <AssemblyVersion>1.1.0.0</AssemblyVersion>
+        <FileVersion>1.1.0.0</FileVersion>
+        <PackageVersion>1.1.0</PackageVersion>
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>fdeploy</ToolCommandName>
         <PackageOutputPath>./nupkg</PackageOutputPath>
@@ -27,7 +27,7 @@
         <PackageProjectUrl>https://github.com/argentini/Argentini.Fdeploy</PackageProjectUrl>
         <RepositoryUrl>https://github.com/argentini/Argentini.Deploy</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
-        <PackageReleaseNotes>Initial release!</PackageReleaseNotes>
+        <PackageReleaseNotes>Bug fixes and updated settings file format</PackageReleaseNotes>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
         <PackageIcon>fdeploy-icon.png</PackageIcon>
