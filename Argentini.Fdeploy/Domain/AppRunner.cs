@@ -537,9 +537,22 @@ public sealed class AppRunner
         {
             #region Verify Server Connection And Share
 
-            client = Storage.ConnectClient(AppState, true);
+            await Spinner.StartAsync("Connecting to server...", async spinner =>
+            {
+                var spinnerText = spinner.Text;
 
-            if (client is null || AppState.CancellationTokenSource.IsCancellationRequested)
+                AppState.CurrentSpinner = spinner;
+
+                client = Storage.ConnectClient(AppState, true, false);
+
+                if (client is not null && AppState.CancellationTokenSource.IsCancellationRequested == false)
+                    spinner.Succeed($"{spinnerText} Success!");
+
+                await Task.CompletedTask;
+
+            }, Patterns.Dots, Patterns.Line);
+
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
                 return;
 
             #endregion
@@ -774,7 +787,16 @@ public sealed class AppRunner
 
                 if (itemCount > 0)
                 {
-                    Parallel.For(0, itemsToCopy.Count, new ParallelOptions { MaxDegreeOfParallelism = AppState.Settings.MaxThreadCount }, (i, state) =>
+                    const int groupSize = 10;
+
+                    // Threads of `groupSize` items to copy concurrently
+                    var arrayOfLists = itemsToCopy
+                        .Select((item, index) => new { Item = item, Index = index })
+                        .GroupBy(x => x.Index / groupSize)
+                        .Select(g => g.Select(x => x.Item).ToList())
+                        .ToArray();                    
+                    
+                    Parallel.For(0, arrayOfLists.Length, new ParallelOptions { MaxDegreeOfParallelism = AppState.Settings.MaxThreadCount }, (i, state) =>
                     {
                         if (AppState.CancellationTokenSource.IsCancellationRequested || state.ShouldExitCurrentIteration || state.IsStopped)
                             return;
@@ -783,13 +805,6 @@ public sealed class AppRunner
 
                         try
                         {
-                            var fo = itemsToCopy[i];
-
-                            var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == fo.RelativeComparablePath && f.IsDeleted == false);
-
-                            if (serverFile is not null && serverFile.LastWriteTime == fo.LastWriteTime && serverFile.FileSizeBytes == fo.FileSizeBytes)
-                                return;
-                           
                             innerClient = Storage.ConnectClient(AppState);
                         
                             if (innerClient is null || AppState.CancellationTokenSource.IsCancellationRequested)
@@ -800,15 +815,23 @@ public sealed class AppRunner
                             if (fileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
                                 return;
                             
-                            Storage.CopyFile(AppState, fileStore, fo);
-
-                            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                            foreach (var fo in arrayOfLists[i])
                             {
-                                state.Stop();
-                                return;
-                            }
+                                var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == fo.RelativeComparablePath && f.IsDeleted == false);
 
-                            filesCopied++;
+                                if (serverFile is not null && serverFile.LastWriteTime == fo.LastWriteTime && serverFile.FileSizeBytes == fo.FileSizeBytes)
+                                    return;
+                               
+                                Storage.CopyFile(AppState, fileStore, fo);
+
+                                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                                {
+                                    state.Stop();
+                                    return;
+                                }
+
+                                filesCopied++;
+                            }
                         }
                         finally
                         {

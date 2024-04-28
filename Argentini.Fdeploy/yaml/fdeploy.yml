@@ -31,7 +31,11 @@ ServerConnection:
     Domain: domain
     UserName: username
     Password: password
-    ConnectTimeoutMs: 5000
+    
+    # Connection and authentication timeout ms; default is 15000
+    ConnectTimeoutMs: 15000
+
+    # Response timeout ms; default is 15000
     ResponseTimeoutMs: 15000
 
     # Remote path to the root of the website without the share name

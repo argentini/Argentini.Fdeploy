@@ -149,96 +149,141 @@ public static class Storage
     
     #region SMB
     
-    public static SMB2Client? ConnectClient(AppState appState, bool verifyShare = false)
+    public static SMB2Client? ConnectClient(AppState appState, bool verifyShare = false, bool suppressOutput = true)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return null;
         
         var serverAvailable = false;
+        var client = new SMB2Client();
+        var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
+        var spinnerText = appState.CurrentSpinner?.Text ?? string.Empty;
         
-        using (var tcpClient = new TcpClient())
+        for (var attempt = 0; attempt < retries; attempt++)
         {
+            using (var tcpClient = new TcpClient())
+            {
+                try
+                {
+                    if (suppressOutput == false && appState.CurrentSpinner is not null)
+                        appState.CurrentSpinner.Text = $"{spinnerText} Checking availability ({attempt + 1}/{retries})...";
+
+                    var result = tcpClient.BeginConnect(appState.Settings.ServerConnection.ServerAddress, 445, null, null);
+                
+                    serverAvailable = result.AsyncWaitHandle.WaitOne(TimeSpan.FromMilliseconds(appState.Settings.ServerConnection.ConnectTimeoutMs));
+                }
+                catch
+                {
+                    serverAvailable = false;
+                }
+                finally
+                {
+                    tcpClient.Close();
+                }
+            }
+
+            if (serverAvailable == false)
+                continue;
+
+            if (suppressOutput == false && appState.CurrentSpinner is not null)
+                appState.CurrentSpinner.Text = $"{spinnerText} Server online...";
+
             try
             {
-                var result = tcpClient.BeginConnect(appState.Settings.ServerConnection.ServerAddress, 445, null, null);
-                
-                serverAvailable = result.AsyncWaitHandle.WaitOne(TimeSpan.FromMilliseconds(appState.Settings.ServerConnection.ConnectTimeoutMs));
-            }
-            catch
-            {
-                serverAvailable = false;
-            }
-            finally
-            {
-                tcpClient.Close();
-            }
-        }
+                if (suppressOutput == false && appState.CurrentSpinner is not null)
+                    appState.CurrentSpinner.Text = $"{spinnerText} Connecting ({attempt + 1}/{retries})...";
 
-        if (serverAvailable == false)
-        {
-            appState.Exceptions.Add("Server is not responding");
-            appState.CancellationTokenSource.Cancel();
-            return null;
-        }
+                var isConnected = client.Connect(appState.Settings.ServerConnection.ServerAddress, SMBTransportType.DirectTCPTransport, appState.Settings.ServerConnection.ResponseTimeoutMs);
 
-        var client = new SMB2Client();
-
-        try
-        {
-            var isConnected = client.Connect(appState.Settings.ServerConnection.ServerAddress, SMBTransportType.DirectTCPTransport, appState.Settings.ServerConnection.ResponseTimeoutMs);
-
-            if (isConnected)
-            {
-                var status = client.Login(appState.Settings.ServerConnection.Domain, appState.Settings.ServerConnection.UserName, appState.Settings.ServerConnection.Password);
-
-                if (status == NTStatus.STATUS_SUCCESS)
+                if (isConnected)
                 {
-                    if (verifyShare)
-                    {
-                        var shares = client.ListShares(out status);
+                    if (suppressOutput == false && appState.CurrentSpinner is not null)
+                        appState.CurrentSpinner.Text = $"{spinnerText} Authenticating ({attempt + 1}/{retries})...";
+                    
+                    var status = client.Login(appState.Settings.ServerConnection.Domain, appState.Settings.ServerConnection.UserName, appState.Settings.ServerConnection.Password);
 
-                        if (status == NTStatus.STATUS_SUCCESS)
+                    if (status == NTStatus.STATUS_SUCCESS)
+                    {
+                        if (verifyShare)
                         {
-                            if (shares.Contains(appState.Settings.ServerConnection.ShareName, StringComparer.OrdinalIgnoreCase) == false)
+                            var shares = client.ListShares(out status);
+
+                            if (status == NTStatus.STATUS_SUCCESS)
                             {
-                                appState.Exceptions.Add("Network share not found on the server");
+                                if (shares.Contains(appState.Settings.ServerConnection.ShareName, StringComparer.OrdinalIgnoreCase) == false)
+                                {
+                                    if (suppressOutput == false && appState.CurrentSpinner is not null)
+                                        appState.CurrentSpinner.Text = $"{spinnerText} Network share unavailable... Failed!";
+
+                                    appState.Exceptions.Add("Network share not found on the server");
+                                    appState.CancellationTokenSource.Cancel();
+                                    DisconnectClient(client);
+                                    return null;
+                                }
+                            }
+
+                            else
+                            {
+                                if (suppressOutput == false && appState.CurrentSpinner is not null)
+                                    appState.CurrentSpinner.Text = $"{spinnerText} Network shares unavailable... Failed!";
+
+                                appState.Exceptions.Add("Could not retrieve server shares list");
                                 appState.CancellationTokenSource.Cancel();
                                 DisconnectClient(client);
                                 return null;
                             }
                         }
+                    }
 
-                        else
-                        {
-                            appState.Exceptions.Add("Could not retrieve server shares list");
-                            appState.CancellationTokenSource.Cancel();
-                            DisconnectClient(client);
-                            return null;
-                        }
+                    else
+                    {
+                        if (suppressOutput == false && appState.CurrentSpinner is not null)
+                            appState.CurrentSpinner.Text = $"{spinnerText} Authentication failed!";
+                        
+                        appState.Exceptions.Add("Server authentication failed");
+                        appState.CancellationTokenSource.Cancel();
                     }
                 }
 
                 else
                 {
-                    appState.Exceptions.Add("Server authentication failed");
+                    if (suppressOutput == false && appState.CurrentSpinner is not null)
+                        appState.CurrentSpinner.Text = $"{spinnerText} Connection failed!";
+
+                    appState.Exceptions.Add("Could not connect to the server");
                     appState.CancellationTokenSource.Cancel();
                 }
-            }
 
-            else
+                if (appState.CancellationTokenSource.IsCancellationRequested == false)
+                    return client;
+                
+                Thread.Sleep(appState.Settings.WriteRetryDelaySeconds * 1000);
+            }
+            catch
             {
-                appState.Exceptions.Add("Could not connect to the server");
-                appState.CancellationTokenSource.Cancel();
+                Thread.Sleep(appState.Settings.WriteRetryDelaySeconds * 1000);
             }
-
-            if (appState.CancellationTokenSource.IsCancellationRequested == false)
-                return client;
         }
-        catch (Exception e)
+
+        if (serverAvailable == false)
         {
-            appState.Exceptions.Add($"Exception: {e.Message}");
+            if (suppressOutput == false)
+                appState.CurrentSpinner?.Fail($"{spinnerText} Could not connect to server... Failed!");
+
+            appState.Exceptions.Add("Server is not responding");
             appState.CancellationTokenSource.Cancel();
         }
+
+        else
+        {
+            if (suppressOutput == false)
+                appState.CurrentSpinner?.Fail($"{spinnerText} Could not authenticate... Failed!");
+        }
+
+        appState.Exceptions.Add("Could not create SMB client");
+        appState.CancellationTokenSource.Cancel();
+
+        DisconnectClient(client);
 
         return null;
     }
