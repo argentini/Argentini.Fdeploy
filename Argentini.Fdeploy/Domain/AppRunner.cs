@@ -90,12 +90,18 @@ public sealed class AppRunner
                     AppState.YamlProjectFilePath = Path.Combine(Directory.GetCurrentDirectory(), $"fdeploy-{projectFilePath}.yml");
             }
         }
-        
+
         #if DEBUG
 
         AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Fynydd-Website-2024/UmbracoCms", "fdeploy-staging.yml");
         
         #endif
+
+        if (File.Exists(AppState.YamlProjectFilePath) == false)
+        {
+            HelpMode = true;
+            return;
+        }
 
         #endregion
         
