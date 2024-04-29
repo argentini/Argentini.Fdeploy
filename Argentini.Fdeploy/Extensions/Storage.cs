@@ -1056,7 +1056,7 @@ public static class Storage
                                 if (appState.CurrentSpinner is null)
                                     continue;
                                 
-                                appState.CurrentSpinner.Text = $"{spinnerText} {localFilePath.GetLastPathSegment()} ({(writeOffset > 0 ? 100/(fileSizeBytes/writeOffset) : 0):N0}%)...";
+                                appState.CurrentSpinner.Text = $"{spinnerText} {localFilePath.TrimPath().TrimStart(appState.TrimmablePublishPath)} ({(writeOffset > 0 ? 100/(fileSizeBytes/writeOffset) : 0):N0}%)...";
                             }
                         }
 

@@ -656,7 +656,7 @@ public sealed class AppRunner
 
             if (AppState.Settings.Paths.OnlineCopyFolderPaths.Count > 0 || AppState.Settings.Paths.OnlineCopyFilePaths.Count > 0)
             {
-                await Spinner.StartAsync("Deploying online-safe files and folders...", async spinner =>
+                await Spinner.StartAsync("Deploy files and folders (before offline)...", async spinner =>
                 {
                     var spinnerText = spinner.Text;
                     var foldersToCreate = new List<string>();
