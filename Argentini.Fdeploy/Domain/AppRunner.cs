@@ -622,15 +622,15 @@ public sealed class AppRunner
 
                         if (AppState.Settings.Deployment.OnlineCopyFolderPaths.Count > 0)
                         {
-                            foreach (var folder in AppState.LocalFiles.ToList().Where(f => f is { IsFolder: true, IsOnlineCopy: true }))
+                            foreach (var folder in AppState.LocalFiles.Where(f => f is { IsFolder: true, IsOnlineCopy: true }).ToList())
                             {
                                 if (AppState.ServerFiles.Any(f => f.IsFolder && f.RelativeComparablePath == folder.RelativeComparablePath) == false)
                                     foldersToCreate.Add($"{AppState.Settings.ServerConnection.RemoteRootPath}\\{folder.RelativeComparablePath.SetSmbPathSeparators().TrimPath()}");
                             }
 
-                            foreach (var folder in foldersToCreate)
+                            foreach (var folder in foldersToCreate.OrderBy(f => f))
                             {
-                                Storage.EnsureServerPathExists(AppState, fileStore, folder);
+                                client.EnsureServerPathExists(fileStore, AppState, folder);
                             }
 
                             if (AppState.CancellationTokenSource.IsCancellationRequested)
@@ -640,33 +640,61 @@ public sealed class AppRunner
                             }
                         }                        
 
-                        var filesToCopy = AppState.LocalFiles.ToList().Where(f => f is { IsFile: true, IsOnlineCopy: true }).ToList();
+                        var filesToCopy = AppState.LocalFiles.Where(f => f is { IsFile: true, IsOnlineCopy: true }).OrderBy(f => f.RelativeComparablePath).ToList();
+
+                        const int groupSize = 10;
+
+                        // Threads of `groupSize` items to copy concurrently
+                        var arrayOfLists = filesToCopy
+                            .Select((item, index) => new { Item = item, Index = index })
+                            .GroupBy(x => x.Index / groupSize)
+                            .Select(g => g.Select(x => x.Item).ToList())
+                            .ToArray();
+                        
                         var tasks = new List<Task>();
                         var semaphore = new SemaphoreSlim(AppState.Settings.MaxThreadCount);
 
-                        foreach (var file in filesToCopy)
+                        foreach (var group in arrayOfLists)
                         {
                             await semaphore.WaitAsync();
 
                             tasks.Add(Task.Run(() =>
                             {
+                                SMB2Client? innerClient = null;
+                                ISMBFileStore? innerFileStore = null;
+
                                 try
                                 {
                                     if (AppState.CancellationTokenSource.IsCancellationRequested)
                                         return;
 
-                                    var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == file.RelativeComparablePath && f.IsDeleted == false);
-
-                                    if (serverFile is not null && (AppState.Settings.CompareFileDates == false || serverFile.LastWriteTime == file.LastWriteTime) && (AppState.Settings.CompareFileSizes == false || serverFile.FileSizeBytes == file.FileSizeBytes))
+                                    innerClient = Storage.ConnectClient(AppState);
+                        
+                                    if (innerClient is null || AppState.CancellationTokenSource.IsCancellationRequested)
                                         return;
 
-                                    spinner.Text = $"{spinnerText} {file.FileNameOrPathSegment}...";
-                                    Storage.CopyFile(AppState, file);
-                                    filesCopied++;
+                                    innerFileStore = Storage.GetFileStore(AppState, innerClient);
+
+                                    if (innerFileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
+                                        return;
+                            
+                                    foreach (var fo in group)
+                                    {
+                                        var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == fo.RelativeComparablePath && f.IsDeleted == false);
+
+                                        if (serverFile is not null && (AppState.Settings.CompareFileDates == false || serverFile.LastWriteTime == fo.LastWriteTime) && (AppState.Settings.CompareFileSizes == false || serverFile.FileSizeBytes == fo.FileSizeBytes))
+                                            return;
+
+                                        spinner.Text = $"{spinnerText} {fo.FileNameOrPathSegment}...";
+                                        innerClient.CopyFile(innerFileStore, AppState, fo);
+                                        filesCopied++;
+                                    }
                                 }
                                 finally
                                 {
                                     semaphore.Release();
+                                    Storage.DisconnectFileStore(innerFileStore);
+                                    Storage.DisconnectClient(innerClient);
                                 }
                             }));
                         }
@@ -723,7 +751,7 @@ public sealed class AppRunner
 
                         var spinnerText = spinner.Text;
 
-                        Storage.TakeServerOffline(AppState, fileStore);
+                        client.TakeServerOffline(fileStore, AppState);
 
                         if (AppState.CancellationTokenSource.IsCancellationRequested)
                         {
@@ -761,22 +789,47 @@ public sealed class AppRunner
 
             Timer.Restart();
             
-            var itemsToCopy = AppState.LocalFiles.Where(f => f is { IsFile: true, IsOnlineCopy: false }).ToList();
-            var itemCount = itemsToCopy.Count;
+            var filesToCopy = AppState.LocalFiles.Where(f => f is { IsFile: true, IsOnlineCopy: false }).OrderBy(f => f.RelativeComparablePath).ToList();
+            var fileCount = filesToCopy.Count;
 
-            await Spinner.StartAsync("Deploy files...", async spinner =>
+            await Spinner.StartAsync("Deploy files and folders...", async spinner =>
             {
                 AppState.CurrentSpinner = spinner;
 
+                var foldersToCreate = new List<string>();
                 var spinnerText = spinner.Text;
                 var filesCopied = 0;
 
-                if (itemCount > 0)
+                foreach (var folder in AppState.LocalFiles.Where(f => f is { IsFolder: true, IsOnlineCopy: false }).ToList())
+                {
+                    if (AppState.ServerFiles.Any(f => f.IsFolder && f.RelativeComparablePath == folder.RelativeComparablePath) == false)
+                        foldersToCreate.Add($"{AppState.Settings.ServerConnection.RemoteRootPath}\\{folder.RelativeComparablePath.SetSmbPathSeparators().TrimPath()}");
+                }
+
+                var fileStore = Storage.GetFileStore(AppState, client);
+
+                if (fileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
+                    return;
+
+                foreach (var folder in foldersToCreate.OrderBy(f => f))
+                {
+                    client.EnsureServerPathExists(fileStore, AppState, folder);
+                }
+
+                Storage.DisconnectFileStore(fileStore);
+                
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                {
+                    spinner.Fail($"{spinnerText} Failed!");
+                    return;
+                }
+                
+                if (fileCount > 0)
                 {
                     const int groupSize = 10;
 
                     // Threads of `groupSize` items to copy concurrently
-                    var arrayOfLists = itemsToCopy
+                    var arrayOfLists = filesToCopy
                         .Select((item, index) => new { Item = item, Index = index })
                         .GroupBy(x => x.Index / groupSize)
                         .Select(g => g.Select(x => x.Item).ToList())
@@ -792,7 +845,7 @@ public sealed class AppRunner
                         tasks.Add(Task.Run(() =>
                         {
                             SMB2Client? innerClient = null;
-                            ISMBFileStore? fileStore = null;
+                            ISMBFileStore? innerFileStore = null;
 
                             try
                             {
@@ -804,9 +857,9 @@ public sealed class AppRunner
                                 if (innerClient is null || AppState.CancellationTokenSource.IsCancellationRequested)
                                     return;
 
-                                fileStore = Storage.GetFileStore(AppState, innerClient);
+                                innerFileStore = Storage.GetFileStore(AppState, innerClient);
 
-                                if (fileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
+                                if (innerFileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
                                     return;
                             
                                 foreach (var fo in group)
@@ -816,7 +869,7 @@ public sealed class AppRunner
                                     if (serverFile is not null && (AppState.Settings.CompareFileDates == false || serverFile.LastWriteTime == fo.LastWriteTime) && (AppState.Settings.CompareFileSizes == false || serverFile.FileSizeBytes == fo.FileSizeBytes))
                                         return;
                                
-                                    Storage.CopyFile(AppState, fo);
+                                    innerClient.CopyFile(innerFileStore, AppState, fo);
 
                                     if (AppState.CancellationTokenSource.IsCancellationRequested)
                                         return;
@@ -827,7 +880,7 @@ public sealed class AppRunner
                             finally
                             {
                                 semaphore.Release();
-                                Storage.DisconnectFileStore(fileStore);
+                                Storage.DisconnectFileStore(innerFileStore);
                                 Storage.DisconnectClient(innerClient);
                             }
                         }));
@@ -905,12 +958,12 @@ public sealed class AppRunner
                         {
                             if (item.IsFile)
                             {
-                                Storage.DeleteServerFile(AppState, fileStore, item);
+                                client.DeleteServerFile(fileStore, AppState, item);
                                 filesRemoved++;
                             }
                             else
                             {
-                                Storage.DeleteServerFolderRecursive(AppState, fileStore, item);
+                                client.DeleteServerFolderRecursive(fileStore, AppState, item);
                                 foldersRemoved++;
                             }
 
@@ -966,7 +1019,7 @@ public sealed class AppRunner
                             }
                         }
 
-                        Storage.BringServerOnline(AppState, fileStore);
+                        client.BringServerOnline(fileStore, AppState);
                         
                         if (AppState.CancellationTokenSource.IsCancellationRequested)
                         {

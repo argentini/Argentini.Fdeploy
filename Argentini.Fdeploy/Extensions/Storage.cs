@@ -11,7 +11,7 @@ public static class Storage
     
     public static async ValueTask RecurseLocalPathAsync(AppState appState, string path)
     {
-        foreach (var subdir in Directory.GetDirectories(path))
+        foreach (var subdir in Directory.GetDirectories(path).OrderBy(d => d))
         {
             var directory = new DirectoryInfo(subdir);
             
@@ -31,7 +31,7 @@ public static class Storage
             await RecurseLocalPathAsync(appState, subdir);
         }
         
-        foreach (var filePath in Directory.GetFiles(path))
+        foreach (var filePath in Directory.GetFiles(path).OrderBy(f => f))
         {
             try
             {
@@ -418,7 +418,7 @@ public static class Storage
 
             if (status != NTStatus.STATUS_SUCCESS)
             {
-                if (ServerFolderExists(appState, fileStore, path) == false)
+                if (client.ServerFolderExists(fileStore, appState, path) == false)
                     return;
             }
 
@@ -465,7 +465,7 @@ public static class Storage
 
             if (files.Count != 0)
             {
-                foreach (var file in files)
+                foreach (var file in files.OrderBy(f => f.FileName))
                 {
                     semaphore.Wait();
                     
@@ -509,7 +509,7 @@ public static class Storage
 
             tasks.Clear();
             
-            foreach (var directory in directories)
+            foreach (var directory in directories.OrderBy(f => f.FileName))
             {
                 semaphore.Wait();
 
@@ -556,12 +556,23 @@ public static class Storage
         }
     }
     
-    public static bool ServerFileExists(AppState appState, ISMBFileStore? fileStore, string serverFilePath)
+    public static bool ServerFileExists(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, string serverFilePath)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return false;
 
-        if (fileStore is null)
+        if (client is null || client.IsConnected == false)
+        {
+            client = ConnectClient(appState);
+            fileStore = GetFileStore(appState, client);
+        }
+
+        else if (fileStore is null)
+        {
+            fileStore = GetFileStore(appState, client);
+        }
+
+        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return false;
 
         serverFilePath = serverFilePath.FormatServerPath(appState);
@@ -574,12 +585,23 @@ public static class Storage
         return status == NTStatus.STATUS_SUCCESS;
     }
     
-    public static bool ServerFolderExists(AppState appState, ISMBFileStore? fileStore, string serverFolderPath)
+    public static bool ServerFolderExists(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, string serverFolderPath)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return false;
 
-        if (fileStore is null)
+        if (client is null || client.IsConnected == false)
+        {
+            client = ConnectClient(appState);
+            fileStore = GetFileStore(appState, client);
+        }
+
+        else if (fileStore is null)
+        {
+            fileStore = GetFileStore(appState, client);
+        }
+
+        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return false;
         
         serverFolderPath = serverFolderPath.FormatServerPath(appState);
@@ -592,22 +614,36 @@ public static class Storage
         return status == NTStatus.STATUS_SUCCESS;
     }
 
-    public static void EnsureServerPathExists(AppState appState, ISMBFileStore? fileStore, string serverFolderPath)
+    public static void EnsureServerPathExists(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, string serverFolderPath)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        if (fileStore is null)
+        if (client is null || client.IsConnected == false)
+        {
+            client = ConnectClient(appState);
+            fileStore = GetFileStore(appState, client);
+        }
+
+        else if (fileStore is null)
+        {
+            fileStore = GetFileStore(appState, client);
+        }
+
+        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
         serverFolderPath = serverFolderPath.FormatServerPath(appState);
 
-        if (ServerFolderExists(appState, fileStore, serverFolderPath))
+        if (client.ServerFolderExists(fileStore, appState, serverFolderPath))
             return;
 
         var segments = serverFolderPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
         var buildingPath = string.Empty;
-        const string spinnerText = "Creating server folder...";
+        var spinnerText = $"Creating server path `{serverFolderPath}`...";
+
+        if (appState.CurrentSpinner is not null)
+            appState.CurrentSpinner.Text = spinnerText;
 
         foreach (var segment in segments)
         {
@@ -616,7 +652,7 @@ public static class Storage
             
             buildingPath += segment;
             
-            if (ServerFolderExists(appState, fileStore, buildingPath))
+            if (client.ServerFolderExists(fileStore, appState, buildingPath))
                 continue;
             
             var success = true;
@@ -624,9 +660,6 @@ public static class Storage
         
             for (var attempt = 0; attempt < retries; attempt++)
             {
-                if (appState.CurrentSpinner is not null)
-                    appState.CurrentSpinner.Text = $"{spinnerText} `{buildingPath}`...";
-
                 var status = fileStore.CreateFile(out var handle, out _, buildingPath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_CREATE, CreateOptions.FILE_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
 
                 if (handle is not null)
@@ -643,7 +676,7 @@ public static class Storage
                 for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
                 {
                     if (appState.CurrentSpinner is not null)
-                        appState.CurrentSpinner.Text = $"{spinnerText} `{buildingPath}`; Retry {attempt + 1} ({x:N0})...";
+                        appState.CurrentSpinner.Text = $"{spinnerText} Retry {attempt + 1} ({x:N0})...";
 
                     Thread.Sleep(1000);
                 }
@@ -652,18 +685,29 @@ public static class Storage
             if (success)
                 continue;
             
-            appState.Exceptions.Add($"Failed to create directory after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{buildingPath}`");
+            appState.Exceptions.Add($"Failed to create directory after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{serverFolderPath}`");
             appState.CancellationTokenSource.Cancel();
             break;
         }
     }
     
-    public static void DeleteServerFile(AppState appState, ISMBFileStore? fileStore, FileObject sfo)
+    public static void DeleteServerFile(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, FileObject sfo)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        if (fileStore is null || sfo.IsDeleted)
+        if (client is null || client.IsConnected == false)
+        {
+            client = ConnectClient(appState);
+            fileStore = GetFileStore(appState, client);
+        }
+
+        else if (fileStore is null)
+        {
+            fileStore = GetFileStore(appState, client);
+        }
+
+        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
         var success = true;
@@ -685,7 +729,7 @@ public static class Storage
             }
             else
             {
-                var fileExists = ServerFileExists(appState, fileStore, sfo.AbsolutePath);
+                var fileExists = client.ServerFileExists(fileStore, appState, sfo.AbsolutePath);
         
                 if (fileExists == false)
                     success = true;
@@ -723,12 +767,23 @@ public static class Storage
         }
     }
 
-    public static void DeleteServerFolder(AppState appState, ISMBFileStore? fileStore, FileObject sfo)
+    public static void DeleteServerFolder(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, FileObject sfo)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        if (fileStore is null || sfo.IsDeleted)
+        if (client is null || client.IsConnected == false)
+        {
+            client = ConnectClient(appState);
+            fileStore = GetFileStore(appState, client);
+        }
+
+        else if (fileStore is null)
+        {
+            fileStore = GetFileStore(appState, client);
+        }
+
+        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
         var success = true;
@@ -750,7 +805,7 @@ public static class Storage
             }
             else
             {
-                var folderExists = ServerFolderExists(appState, fileStore, sfo.AbsolutePath);
+                var folderExists = client.ServerFolderExists(fileStore, appState, sfo.AbsolutePath);
 
                 if (folderExists == false)
                     success = true;
@@ -788,15 +843,26 @@ public static class Storage
         }
     }
 
-    public static void DeleteServerFolderRecursive(AppState appState, ISMBFileStore? fileStore, FileObject sfo)
+    public static void DeleteServerFolderRecursive(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, FileObject sfo)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        if (fileStore is null)
+        if (client is null || client.IsConnected == false)
+        {
+            client = ConnectClient(appState);
+            fileStore = GetFileStore(appState, client);
+        }
+
+        else if (fileStore is null)
+        {
+            fileStore = GetFileStore(appState, client);
+        }
+
+        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
-        var folderExists = ServerFolderExists(appState, fileStore, sfo.AbsolutePath);
+        var folderExists = client.ServerFolderExists(fileStore, appState, sfo.AbsolutePath);
         
         if (folderExists == false)
             return;
@@ -808,7 +874,7 @@ public static class Storage
 
         foreach (var file in appState.ServerFiles.ToList().Where(f => f is { IsFile: true, IsDeleted: false } && f.AbsolutePath.StartsWith(sfo.AbsolutePath)))
         {
-            DeleteServerFile(appState, fileStore, file);
+            client.DeleteServerFile(fileStore, appState, file);
         }
 
         if (appState.CancellationTokenSource.IsCancellationRequested)
@@ -818,35 +884,36 @@ public static class Storage
 
         foreach (var folder in appState.ServerFiles.ToList().Where(f => f is { IsFolder: true, IsDeleted: false } && f.AbsolutePath.StartsWith(sfo.AbsolutePath)).OrderByDescending(o => o.Level))
         {
-            DeleteServerFolder(appState, fileStore, folder);
+            client.DeleteServerFolder(fileStore, appState, folder);
         }
     }
     
-    public static void CopyFile(AppState appState, LocalFileObject fo)
+    public static void CopyFile(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, LocalFileObject fo)
     {
-        CopyFile(appState, fo.AbsolutePath, fo.AbsoluteServerPath, fo.LastWriteTime);
+        client.CopyFile(fileStore, appState, fo.AbsolutePath, fo.AbsoluteServerPath, fo.LastWriteTime);
     }
 
-    public static void CopyFile(AppState appState, string localFilePath, string serverFilePath, long fileTime = -1, long fileSizeBytes = -1)
+    public static void CopyFile(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, string localFilePath, string serverFilePath, long fileTime = -1, long fileSizeBytes = -1)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
-        SMB2Client? client = null;
-        ISMBFileStore? fileStore = null;
-        
         try
         {
-            client = ConnectClient(appState);
+            if (client is null || client.IsConnected == false)
+            {
+                client = ConnectClient(appState);
+                fileStore = GetFileStore(appState, client);
+            }
 
-            if (client is null || client.IsConnected == false || appState.CancellationTokenSource.IsCancellationRequested)
+            else if (fileStore is null)
+            {
+                fileStore = GetFileStore(appState, client);
+            }
+
+            if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
                 return;
 
-            fileStore = GetFileStore(appState, client);
-        
-            if (fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
-                return;
-        
             localFilePath = localFilePath.FormatLocalPath(appState);
 
             if (File.Exists(localFilePath) == false)
@@ -865,11 +932,13 @@ public static class Storage
                 appState.CurrentSpinner.Text = $"{spinnerText} {localFilePath.GetLastPathSegment()} (0%)...";
             
             serverFilePath = serverFilePath.FormatServerPath(appState);
-            
-            EnsureServerPathExists(appState, fileStore, serverFilePath.TrimEnd(serverFilePath.GetLastPathSegment()).TrimPath());
 
-            if (appState.CancellationTokenSource.IsCancellationRequested)
-                return;
+            // Not necessary as AppRunner does this prior to copies
+            // ====================================================
+            // EnsureServerPathExists(appState, fileStore, serverFilePath.TrimEnd(serverFilePath.GetLastPathSegment()).TrimPath());
+            //
+            // if (appState.CancellationTokenSource.IsCancellationRequested)
+            //     return;
 
             try
             {
@@ -886,7 +955,7 @@ public static class Storage
 
                 using (var localFileStream = new FileStream(localFilePath, FileMode.Open, FileAccess.Read))
                 {
-                    var fileExists = ServerFileExists(appState, fileStore, serverFilePath);
+                    var fileExists = client.ServerFileExists(fileStore, appState, serverFilePath);
                     
                     for (var attempt = 0; attempt < retries; attempt++)
                     {
@@ -948,7 +1017,7 @@ public static class Storage
                     return;
                 }
                 
-                ChangeModifyDate(appState, fileStore, serverFilePath, fileTime);
+                client.ChangeModifyDate(fileStore, appState, serverFilePath, fileTime);
             }
             catch
             {
@@ -956,24 +1025,35 @@ public static class Storage
                 appState.CancellationTokenSource.Cancel();
             }
         }
-        finally
+        catch
         {
-            DisconnectFileStore(fileStore);
-            DisconnectClient(client);
+            appState.Exceptions.Add($"Failed to copy file `{serverFilePath}`");
+            appState.CancellationTokenSource.Cancel();
         }
     }
     
-    public static void ChangeModifyDate(AppState appState, ISMBFileStore? fileStore, LocalFileObject fo)
+    public static void ChangeModifyDate(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, LocalFileObject fo)
     {
-        ChangeModifyDate(appState, fileStore, fo.AbsoluteServerPath, fo.LastWriteTime);
+        client.ChangeModifyDate(fileStore, appState, fo.AbsoluteServerPath, fo.LastWriteTime);
     }    
 
-    public static void ChangeModifyDate(AppState appState, ISMBFileStore? fileStore, string serverFilePath, long fileTime)
+    public static void ChangeModifyDate(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, string serverFilePath, long fileTime)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
-        if (fileStore is null)
+        if (client is null || client.IsConnected == false)
+        {
+            client = ConnectClient(appState);
+            fileStore = GetFileStore(appState, client);
+        }
+
+        else if (fileStore is null)
+        {
+            fileStore = GetFileStore(appState, client);
+        }
+
+        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
         serverFilePath = serverFilePath.FormatServerPath(appState);
@@ -1009,12 +1089,23 @@ public static class Storage
     
     #region Offline Support
     
-    public static void TakeServerOffline(AppState appState, ISMBFileStore? fileStore)
+    public static void TakeServerOffline(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
-        if (fileStore is null)
+        if (client is null || client.IsConnected == false)
+        {
+            client = ConnectClient(appState);
+            fileStore = GetFileStore(appState, client);
+        }
+
+        else if (fileStore is null)
+        {
+            fileStore = GetFileStore(appState, client);
+        }
+
+        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
         var serverFilePath = $"{appState.Settings.ServerConnection.RemoteRootPath}\\app_offline.htm";
@@ -1023,7 +1114,7 @@ public static class Storage
         {
             var success = true;
             var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
-            var fileExists = ServerFileExists(appState, fileStore, serverFilePath);
+            var fileExists = client.ServerFileExists(fileStore, appState, serverFilePath);
             var spinnerText = appState.CurrentSpinner?.Text ?? string.Empty;
             
             for (var attempt = 0; attempt < retries; attempt++)
@@ -1073,12 +1164,23 @@ public static class Storage
         }
     }
     
-    public static void BringServerOnline(AppState appState, ISMBFileStore? fileStore)
+    public static void BringServerOnline(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        if (fileStore is null)
+        if (client is null || client.IsConnected == false)
+        {
+            client = ConnectClient(appState);
+            fileStore = GetFileStore(appState, client);
+        }
+
+        else if (fileStore is null)
+        {
+            fileStore = GetFileStore(appState, client);
+        }
+
+        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
         var serverFilePath = $"{appState.Settings.ServerConnection.RemoteRootPath}/app_offline.htm".FormatServerPath(appState);
@@ -1101,7 +1203,7 @@ public static class Storage
             }
             else
             {
-                var fileExists = ServerFileExists(appState, fileStore, serverFilePath);
+                var fileExists = client.ServerFileExists(fileStore, appState, serverFilePath);
         
                 if (fileExists == false)
                     success = true;
