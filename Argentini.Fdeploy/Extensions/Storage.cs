@@ -330,23 +330,7 @@ public static class Storage
             client.Disconnect();
         }
     }
-
-    public static void DisconnectFileStore(ISMBFileStore? fileStore)
-    {
-        if (fileStore is null)
-            return;
-
-        try
-        {
-            fileStore.Disconnect();
-        }
-
-        catch
-        {
-            // ignored
-        }
-    }
-
+    
     public static ISMBFileStore? GetFileStore(AppState appState, SMB2Client? client)
     {
         if (client is null || client.IsConnected == false || appState.CancellationTokenSource.IsCancellationRequested)
@@ -379,6 +363,22 @@ public static class Storage
         appState.CancellationTokenSource.Cancel();
 
         return null;
+    }
+    
+    public static void DisconnectFileStore(ISMBFileStore? fileStore)
+    {
+        if (fileStore is null)
+            return;
+
+        try
+        {
+            fileStore.Disconnect();
+        }
+
+        catch
+        {
+            // ignored
+        }
     }
     
     #endregion
