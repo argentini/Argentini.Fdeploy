@@ -52,7 +52,7 @@ public static class Storage
         }
     }
 
-    public static void CopyFolder(AppState appState, string localSourcePath, string localDestinationPath)
+    public static void CopyLocalFolder(AppState appState, string localSourcePath, string localDestinationPath)
     {
         // Get the subdirectories for the specified directory.
         var dir = new DirectoryInfo(localSourcePath);
@@ -111,7 +111,7 @@ public static class Storage
 
             var subdir = dirs[i];
             
-            CopyFolder(appState, subdir.FullName, Path.Combine(localDestinationPath, subdir.Name));
+            CopyLocalFolder(appState, subdir.FullName, Path.Combine(localDestinationPath, subdir.Name));
         });
     }
     

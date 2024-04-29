@@ -486,7 +486,7 @@ public sealed class AppRunner
                     {
                         Timer.Restart();
 
-                        Storage.CopyFolder(AppState, $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{item}", $"{AppState.PublishPath}{Path.DirectorySeparatorChar}{item}");
+                        Storage.CopyLocalFolder(AppState, $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{item}", $"{AppState.PublishPath}{Path.DirectorySeparatorChar}{item}");
 
                         spinner.Text = $"{spinnerText} {item.GetLastPathSegment()}...";
                         await Task.Delay(5);
