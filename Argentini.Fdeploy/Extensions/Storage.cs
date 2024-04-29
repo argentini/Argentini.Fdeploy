@@ -883,60 +883,63 @@ public static class Storage
                     fileSizeBytes = fileInfo.Length;
                 }
 
-                var localFileStream = new FileStream(localFilePath, FileMode.Open, FileAccess.Read);
                 var success = true;
                 var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
-                var fileExists = ServerFileExists(appState, fileStore, serverFilePath);
-                
-                for (var attempt = 0; attempt < retries; attempt++)
+
+                using (var localFileStream = new FileStream(localFilePath, FileMode.Open, FileAccess.Read))
                 {
-                    var status = fileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, fileExists ? CreateDisposition.FILE_OVERWRITE : CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
-                        
-                    if (status == NTStatus.STATUS_SUCCESS)
+                    var fileExists = ServerFileExists(appState, fileStore, serverFilePath);
+                    
+                    for (var attempt = 0; attempt < retries; attempt++)
                     {
-                        var maxWriteSize = (int)fileStore.MaxWriteSize;
-                        var writeOffset = 0;
+                        var status = fileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, fileExists ? CreateDisposition.FILE_OVERWRITE : CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
                             
-                        while (localFileStream.Position < localFileStream.Length)
+                        if (status == NTStatus.STATUS_SUCCESS)
                         {
-                            var buffer = new byte[maxWriteSize];
-                            var bytesRead = localFileStream.Read(buffer, 0, buffer.Length);
+                            var maxWriteSize = (int)fileStore.MaxWriteSize;
+                            var writeOffset = 0;
                                 
-                            if (bytesRead < maxWriteSize)
+                            while (localFileStream.Position < localFileStream.Length)
                             {
-                                Array.Resize(ref buffer, bytesRead);
-                            }
+                                var buffer = new byte[maxWriteSize];
+                                var bytesRead = localFileStream.Read(buffer, 0, buffer.Length);
+                                    
+                                if (bytesRead < maxWriteSize)
+                                {
+                                    Array.Resize(ref buffer, bytesRead);
+                                }
+                                    
+                                status = fileStore.WriteFile(out _, handle, writeOffset, buffer);
+
+                                if (status != NTStatus.STATUS_SUCCESS)
+                                {
+                                    success = false;
+                                    break;
+                                }
+
+                                success = true;
+                                writeOffset += bytesRead;
+
+                                if (appState.CurrentSpinner is null)
+                                    continue;
                                 
-                            status = fileStore.WriteFile(out _, handle, writeOffset, buffer);
-
-                            if (status != NTStatus.STATUS_SUCCESS)
-                            {
-                                success = false;
-                                break;
+                                appState.CurrentSpinner.Text = $"{spinnerText} {localFilePath.GetLastPathSegment()} ({(writeOffset > 0 ? 100/(fileSizeBytes/writeOffset) : 0):N0}%)...";
                             }
-
-                            success = true;
-                            writeOffset += bytesRead;
-
-                            if (appState.CurrentSpinner is null)
-                                continue;
-                            
-                            appState.CurrentSpinner.Text = $"{spinnerText} {localFilePath.GetLastPathSegment()} ({(writeOffset > 0 ? 100/(fileSizeBytes/writeOffset) : 0):N0}%)...";
                         }
-                    }
 
-                    if (handle is not null)
-                        fileStore.CloseFile(handle);
+                        if (handle is not null)
+                            fileStore.CloseFile(handle);
 
-                    if (success)
-                        break;
+                        if (success)
+                            break;
 
-                    for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
-                    {
-                        if (appState.CurrentSpinner is not null)
-                            appState.CurrentSpinner.Text = $"{spinnerText} Retry {attempt + 1} ({x:N0})...";
+                        for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
+                        {
+                            if (appState.CurrentSpinner is not null)
+                                appState.CurrentSpinner.Text = $"{spinnerText} Retry {attempt + 1} ({x:N0})...";
 
-                        Thread.Sleep(1000);
+                            Thread.Sleep(1000);
+                        }
                     }
                 }
 
