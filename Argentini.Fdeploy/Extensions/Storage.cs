@@ -178,8 +178,8 @@ public static class Storage
     #endregion
     
     #region SMB
-    
-    public static SMB2Client? ConnectClient(AppState appState, bool verifyShare = false, bool suppressOutput = true)
+
+    public static SMB2Client? CreateClient(AppState appState, bool verifyShare = false, bool suppressOutput = true)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return null;
@@ -318,6 +318,53 @@ public static class Storage
         return null;
     }
 
+    public static void ReConnectClient(this SMB2Client client, AppState appState)
+    {
+        if (appState.CancellationTokenSource.IsCancellationRequested)
+            return;
+        
+        var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
+        
+        for (var attempt = 0; attempt < retries; attempt++)
+        {
+            try
+            {
+                var isConnected = client.Connect(appState.Settings.ServerConnection.ServerAddress, SMBTransportType.DirectTCPTransport, appState.Settings.ServerConnection.ResponseTimeoutMs);
+
+                if (isConnected)
+                {
+                    var status = client.Login(appState.Settings.ServerConnection.Domain, appState.Settings.ServerConnection.UserName, appState.Settings.ServerConnection.Password);
+
+                    if (status != NTStatus.STATUS_SUCCESS)
+                    {
+                        appState.Exceptions.Add("Server authentication failed");
+                        appState.CancellationTokenSource.Cancel();
+                    }
+                }
+
+                else
+                {
+                    appState.Exceptions.Add("Could not connect to the server");
+                    appState.CancellationTokenSource.Cancel();
+                }
+
+                if (appState.CancellationTokenSource.IsCancellationRequested == false)
+                    return;
+                
+                Thread.Sleep(appState.Settings.WriteRetryDelaySeconds * 1000);
+            }
+            catch
+            {
+                Thread.Sleep(appState.Settings.WriteRetryDelaySeconds * 1000);
+            }
+        }
+
+        appState.Exceptions.Add("Could not create SMB client");
+        appState.CancellationTokenSource.Cancel();
+
+        DisconnectClient(client);
+    }
+
     public static void DisconnectClient(SMB2Client? client)
     {
         if (client is null || client.IsConnected == false)
@@ -334,7 +381,7 @@ public static class Storage
         }
     }
     
-    public static ISMBFileStore? GetFileStore(AppState appState, SMB2Client? client)
+    public static ISMBFileStore? GetFileStore(this SMB2Client? client, AppState appState)
     {
         if (client is null || client.IsConnected == false || appState.CancellationTokenSource.IsCancellationRequested)
             return null;
@@ -398,12 +445,12 @@ public static class Storage
         
         try
         {
-            client = ConnectClient(appState);
+            client = CreateClient(appState);
 
             if (client is null || client.IsConnected == false || appState.CancellationTokenSource.IsCancellationRequested)
                 return;
 
-            fileStore = GetFileStore(appState, client);
+            fileStore = client.GetFileStore(appState);
         
             if (fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
                 return;
@@ -561,18 +608,21 @@ public static class Storage
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return false;
 
-        if (client is null || client.IsConnected == false)
+        if (client is null)
         {
-            client = ConnectClient(appState);
-            fileStore = GetFileStore(appState, client);
+            client = CreateClient(appState);
+            fileStore = client.GetFileStore(appState);
+        }
+        
+        else if (client.IsConnected == false)
+        {
+            client.ReConnectClient(appState);
+            fileStore = client.GetFileStore(appState);
         }
 
-        else if (fileStore is null)
-        {
-            fileStore = GetFileStore(appState, client);
-        }
+        fileStore ??= client.GetFileStore(appState);
 
-        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
+        if (client is null || client.IsConnected == false || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return false;
 
         serverFilePath = serverFilePath.FormatServerPath(appState);
@@ -590,18 +640,21 @@ public static class Storage
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return false;
 
-        if (client is null || client.IsConnected == false)
+        if (client is null)
         {
-            client = ConnectClient(appState);
-            fileStore = GetFileStore(appState, client);
+            client = CreateClient(appState);
+            fileStore = client.GetFileStore(appState);
+        }
+        
+        else if (client.IsConnected == false)
+        {
+            client.ReConnectClient(appState);
+            fileStore = client.GetFileStore(appState);
         }
 
-        else if (fileStore is null)
-        {
-            fileStore = GetFileStore(appState, client);
-        }
+        fileStore ??= client.GetFileStore(appState);
 
-        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
+        if (client is null || client.IsConnected == false || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return false;
         
         serverFolderPath = serverFolderPath.FormatServerPath(appState);
@@ -619,18 +672,21 @@ public static class Storage
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        if (client is null || client.IsConnected == false)
+        if (client is null)
         {
-            client = ConnectClient(appState);
-            fileStore = GetFileStore(appState, client);
+            client = CreateClient(appState);
+            fileStore = client.GetFileStore(appState);
+        }
+        
+        else if (client.IsConnected == false)
+        {
+            client.ReConnectClient(appState);
+            fileStore = client.GetFileStore(appState);
         }
 
-        else if (fileStore is null)
-        {
-            fileStore = GetFileStore(appState, client);
-        }
+        fileStore ??= client.GetFileStore(appState);
 
-        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
+        if (client is null || client.IsConnected == false || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
         serverFolderPath = serverFolderPath.FormatServerPath(appState);
@@ -696,18 +752,21 @@ public static class Storage
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        if (client is null || client.IsConnected == false)
+        if (client is null)
         {
-            client = ConnectClient(appState);
-            fileStore = GetFileStore(appState, client);
+            client = CreateClient(appState);
+            fileStore = client.GetFileStore(appState);
+        }
+        
+        else if (client.IsConnected == false)
+        {
+            client.ReConnectClient(appState);
+            fileStore = client.GetFileStore(appState);
         }
 
-        else if (fileStore is null)
-        {
-            fileStore = GetFileStore(appState, client);
-        }
+        fileStore ??= client.GetFileStore(appState);
 
-        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
+        if (client is null || client.IsConnected == false || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
         var success = true;
@@ -772,18 +831,21 @@ public static class Storage
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        if (client is null || client.IsConnected == false)
+        if (client is null)
         {
-            client = ConnectClient(appState);
-            fileStore = GetFileStore(appState, client);
+            client = CreateClient(appState);
+            fileStore = client.GetFileStore(appState);
+        }
+        
+        else if (client.IsConnected == false)
+        {
+            client.ReConnectClient(appState);
+            fileStore = client.GetFileStore(appState);
         }
 
-        else if (fileStore is null)
-        {
-            fileStore = GetFileStore(appState, client);
-        }
+        fileStore ??= client.GetFileStore(appState);
 
-        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
+        if (client is null || client.IsConnected == false || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
         var success = true;
@@ -848,18 +910,21 @@ public static class Storage
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        if (client is null || client.IsConnected == false)
+        if (client is null)
         {
-            client = ConnectClient(appState);
-            fileStore = GetFileStore(appState, client);
+            client = CreateClient(appState);
+            fileStore = client.GetFileStore(appState);
+        }
+        
+        else if (client.IsConnected == false)
+        {
+            client.ReConnectClient(appState);
+            fileStore = client.GetFileStore(appState);
         }
 
-        else if (fileStore is null)
-        {
-            fileStore = GetFileStore(appState, client);
-        }
+        fileStore ??= client.GetFileStore(appState);
 
-        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
+        if (client is null || client.IsConnected == false || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
         var folderExists = client.ServerFolderExists(fileStore, appState, sfo.AbsolutePath);
@@ -897,25 +962,28 @@ public static class Storage
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
-
+        
         try
         {
-            if (client is null || client.IsConnected == false)
+            if (client is null)
             {
-                client = ConnectClient(appState);
-                fileStore = GetFileStore(appState, client);
+                client = CreateClient(appState);
+                fileStore = client.GetFileStore(appState);
+            }
+        
+            else if (client.IsConnected == false)
+            {
+                client.ReConnectClient(appState);
+                fileStore = client.GetFileStore(appState);
             }
 
-            else if (fileStore is null)
-            {
-                fileStore = GetFileStore(appState, client);
-            }
+            fileStore ??= client.GetFileStore(appState);
 
-            if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
+            if (client is null || client.IsConnected == false || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
                 return;
 
             localFilePath = localFilePath.FormatLocalPath(appState);
-
+            
             if (File.Exists(localFilePath) == false)
             {
                 appState.Exceptions.Add($"File `{localFilePath}` does not exist");
@@ -933,12 +1001,10 @@ public static class Storage
             
             serverFilePath = serverFilePath.FormatServerPath(appState);
 
-            // Not necessary as AppRunner does this prior to copies
-            // ====================================================
-            // EnsureServerPathExists(appState, fileStore, serverFilePath.TrimEnd(serverFilePath.GetLastPathSegment()).TrimPath());
-            //
-            // if (appState.CancellationTokenSource.IsCancellationRequested)
-            //     return;
+            client.EnsureServerPathExists(fileStore, appState, serverFilePath.TrimEnd(serverFilePath.GetLastPathSegment()).TrimPath());
+            
+            if (appState.CancellationTokenSource.IsCancellationRequested)
+                return;
 
             try
             {
@@ -963,7 +1029,7 @@ public static class Storage
                             
                         if (status == NTStatus.STATUS_SUCCESS)
                         {
-                            var maxWriteSize = (int)fileStore.MaxWriteSize;
+                            const int maxWriteSize = 1048576; // 1mb
                             var writeOffset = 0;
                                 
                             while (localFileStream.Position < localFileStream.Length)
@@ -1042,18 +1108,21 @@ public static class Storage
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
-        if (client is null || client.IsConnected == false)
+        if (client is null)
         {
-            client = ConnectClient(appState);
-            fileStore = GetFileStore(appState, client);
+            client = CreateClient(appState);
+            fileStore = client.GetFileStore(appState);
+        }
+        
+        else if (client.IsConnected == false)
+        {
+            client.ReConnectClient(appState);
+            fileStore = client.GetFileStore(appState);
         }
 
-        else if (fileStore is null)
-        {
-            fileStore = GetFileStore(appState, client);
-        }
+        fileStore ??= client.GetFileStore(appState);
 
-        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
+        if (client is null || client.IsConnected == false || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
         serverFilePath = serverFilePath.FormatServerPath(appState);
@@ -1094,18 +1163,21 @@ public static class Storage
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
-        if (client is null || client.IsConnected == false)
+        if (client is null)
         {
-            client = ConnectClient(appState);
-            fileStore = GetFileStore(appState, client);
+            client = CreateClient(appState);
+            fileStore = client.GetFileStore(appState);
+        }
+        
+        else if (client.IsConnected == false)
+        {
+            client.ReConnectClient(appState);
+            fileStore = client.GetFileStore(appState);
         }
 
-        else if (fileStore is null)
-        {
-            fileStore = GetFileStore(appState, client);
-        }
+        fileStore ??= client.GetFileStore(appState);
 
-        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
+        if (client is null || client.IsConnected == false || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
         var serverFilePath = $"{appState.Settings.ServerConnection.RemoteRootPath}\\app_offline.htm";
@@ -1169,18 +1241,21 @@ public static class Storage
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
-        if (client is null || client.IsConnected == false)
+        if (client is null)
         {
-            client = ConnectClient(appState);
-            fileStore = GetFileStore(appState, client);
+            client = CreateClient(appState);
+            fileStore = client.GetFileStore(appState);
+        }
+        
+        else if (client.IsConnected == false)
+        {
+            client.ReConnectClient(appState);
+            fileStore = client.GetFileStore(appState);
         }
 
-        else if (fileStore is null)
-        {
-            fileStore = GetFileStore(appState, client);
-        }
+        fileStore ??= client.GetFileStore(appState);
 
-        if (client is null || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
+        if (client is null || client.IsConnected == false || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
         var serverFilePath = $"{appState.Settings.ServerConnection.RemoteRootPath}/app_offline.htm".FormatServerPath(appState);

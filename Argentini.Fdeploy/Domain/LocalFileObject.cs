@@ -20,7 +20,7 @@ public sealed class LocalFileObject : FileObject
         SetPathSegments();
 
         AbsoluteServerPath = $"{appState.Settings.ServerConnection.RemoteRootPath}\\{RelativeComparablePath}".FormatServerPath(appState);
- 
+        
         foreach (var staticFolderPath in appState.Settings.Deployment.OnlineCopyFolderPaths)
         {
             if (RelativeComparablePath.StartsWith(staticFolderPath) == false)
