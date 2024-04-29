@@ -419,8 +419,7 @@ public static class Storage
                     return;
             }
 
-            status = fileStore.QueryDirectory(out var fileFolderList, fileFolderHandle, "*",
-                FileInformationClass.FileDirectoryInformation);
+            status = fileStore.QueryDirectory(out var fileFolderList, fileFolderHandle, "*", FileInformationClass.FileDirectoryInformation);
 
             if (fileFolderHandle is not null)
                 status = fileStore.CloseFile(fileFolderHandle);
@@ -437,8 +436,7 @@ public static class Storage
                     if (file.FileName is "." or "..")
                         continue;
 
-                    if (includeHidden == false &&
-                        (file.FileAttributes & FileAttributes.Hidden) == FileAttributes.Hidden)
+                    if (includeHidden == false && (file.FileAttributes & FileAttributes.Hidden) == FileAttributes.Hidden)
                         continue;
 
                     if ((file.FileAttributes & FileAttributes.Directory) == FileAttributes.Directory)
@@ -477,8 +475,7 @@ public static class Storage
 
                             var filePath = $"{path}\\{file.FileName}";
 
-                            var fo = new ServerFileObject(appState, filePath.Trim('\\'), file.LastWriteTime.ToFileTimeUtc(),
-                                file.EndOfFile, true, appState.Settings.ServerConnection.RemoteRootPath);
+                            var fo = new ServerFileObject(appState, filePath.Trim('\\'), file.LastWriteTime.ToFileTimeUtc(), file.EndOfFile, true, appState.Settings.ServerConnection.RemoteRootPath);
 
                             if (FilePathShouldBeIgnoredDuringScan(appState, fo))
                                 return;
@@ -521,9 +518,7 @@ public static class Storage
                             return;
 
                         var directoryPath = $"{path}\\{directory.FileName}";
-
-                        var fo = new ServerFileObject(appState, directoryPath.Trim('\\'),
-                            directory.LastWriteTime.ToFileTimeUtc(), 0, false, appState.Settings.ServerConnection.RemoteRootPath);
+                        var fo = new ServerFileObject(appState, directoryPath.Trim('\\'), directory.LastWriteTime.ToFileTimeUtc(), 0, false, appState.Settings.ServerConnection.RemoteRootPath);
 
                         if (FolderPathShouldBeIgnoredDuringScan(appState, fo))
                             return;
@@ -660,7 +655,7 @@ public static class Storage
         }
     }
     
-    public static async ValueTask DeleteServerFileAsync(AppState appState, ISMBFileStore? fileStore, FileObject sfo)
+    public static void DeleteServerFile(AppState appState, ISMBFileStore? fileStore, FileObject sfo)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -711,13 +706,13 @@ public static class Storage
                 appState.CurrentSpinner.Text = $"{text} Retry {attempt + 1} ({sfo.FileNameOrPathSegment})...";
             }
 
-            await Task.Delay(appState.Settings.WriteRetryDelaySeconds * 1000);
+            Thread.Sleep(appState.Settings.WriteRetryDelaySeconds * 1000);
         }
 
         if (success == false)
         {
             appState.Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{sfo.AbsolutePath}`");
-            await appState.CancellationTokenSource.CancelAsync();
+            appState.CancellationTokenSource.Cancel();
         }
         else
         {
@@ -725,7 +720,7 @@ public static class Storage
         }
     }
 
-    public static async ValueTask DeleteServerFolderAsync(AppState appState, ISMBFileStore? fileStore, FileObject sfo)
+    public static void DeleteServerFolder(AppState appState, ISMBFileStore? fileStore, FileObject sfo)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -776,13 +771,13 @@ public static class Storage
                 appState.CurrentSpinner.Text = $"{text} Retry {attempt + 1} ({sfo.FileNameOrPathSegment}/)...";
             }
 
-            await Task.Delay(appState.Settings.WriteRetryDelaySeconds * 1000);
+            Thread.Sleep(appState.Settings.WriteRetryDelaySeconds * 1000);
         }
 
         if (success == false)
         {
             appState.Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{sfo.AbsolutePath}`");
-            await appState.CancellationTokenSource.CancelAsync();
+            appState.CancellationTokenSource.Cancel();
         }
         else
         {
@@ -790,7 +785,7 @@ public static class Storage
         }
     }
 
-    public static async ValueTask DeleteServerFolderRecursiveAsync(AppState appState, ISMBFileStore? fileStore, FileObject sfo)
+    public static void DeleteServerFolderRecursive(AppState appState, ISMBFileStore? fileStore, FileObject sfo)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -810,7 +805,7 @@ public static class Storage
 
         foreach (var file in appState.ServerFiles.ToList().Where(f => f is { IsFile: true, IsDeleted: false } && f.AbsolutePath.StartsWith(sfo.AbsolutePath)))
         {
-            await DeleteServerFileAsync(appState, fileStore, file);
+            DeleteServerFile(appState, fileStore, file);
         }
 
         if (appState.CancellationTokenSource.IsCancellationRequested)
@@ -820,7 +815,7 @@ public static class Storage
 
         foreach (var folder in appState.ServerFiles.ToList().Where(f => f is { IsFolder: true, IsDeleted: false } && f.AbsolutePath.StartsWith(sfo.AbsolutePath)).OrderByDescending(o => o.Level))
         {
-            await DeleteServerFolderAsync(appState, fileStore, folder);
+            DeleteServerFolder(appState, fileStore, folder);
         }
     }
     
@@ -1011,7 +1006,7 @@ public static class Storage
     
     #region Offline Support
     
-    public static async ValueTask TakeServerOfflineAsync(AppState appState, ISMBFileStore? fileStore)
+    public static void TakeServerOffline(AppState appState, ISMBFileStore? fileStore)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -1058,24 +1053,24 @@ public static class Storage
                     if (appState.CurrentSpinner is not null)
                         appState.CurrentSpinner.Text = $"{spinnerText} Retry {attempt + 1} ({x:N0})...";
 
-                    await Task.Delay(1000);
+                    Thread.Sleep(1000);
                 }
             }
 
-            if (success == false)
-            {
-                appState.Exceptions.Add($"Failed to create offline file {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{serverFilePath}`");
-                await appState.CancellationTokenSource.CancelAsync();
-            }
+            if (success)
+                return;
+            
+            appState.Exceptions.Add($"Failed to create offline file {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{serverFilePath}`");
+            appState.CancellationTokenSource.Cancel();
         }
         catch
         {
             appState.Exceptions.Add($"Failed to create offline file `{serverFilePath}`");
-            await appState.CancellationTokenSource.CancelAsync();
+            appState.CancellationTokenSource.Cancel();
         }
     }
     
-    public static async ValueTask BringServerOnlineAsync(AppState appState, ISMBFileStore? fileStore)
+    public static void BringServerOnline(AppState appState, ISMBFileStore? fileStore)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -1127,14 +1122,14 @@ public static class Storage
                 appState.CurrentSpinner.Text = $"{text} Retry {attempt + 1} ({serverFilePath.GetLastPathSegment()})...";
             }
 
-            await Task.Delay(appState.Settings.WriteRetryDelaySeconds * 1000);
+            Thread.Sleep(appState.Settings.WriteRetryDelaySeconds * 1000);
         }
 
-        if (success == false)
-        {
-            appState.Exceptions.Add($"Failed to delete offline file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{serverFilePath}`");
-            await appState.CancellationTokenSource.CancelAsync();
-        }
+        if (success)
+            return;
+        
+        appState.Exceptions.Add($"Failed to delete offline file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{serverFilePath}`");
+        appState.CancellationTokenSource.Cancel();
     }
     
     #endregion

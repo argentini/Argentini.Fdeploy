@@ -821,7 +821,7 @@ public sealed class AppRunner
 
                         var spinnerText = spinner.Text;
 
-                        await Storage.TakeServerOfflineAsync(AppState, fileStore);
+                        Storage.TakeServerOffline(AppState, fileStore);
 
                         if (AppState.CancellationTokenSource.IsCancellationRequested)
                         {
@@ -1003,12 +1003,12 @@ public sealed class AppRunner
                         {
                             if (item.IsFile)
                             {
-                                await Storage.DeleteServerFileAsync(AppState, fileStore, item);
+                                Storage.DeleteServerFile(AppState, fileStore, item);
                                 filesRemoved++;
                             }
                             else
                             {
-                                await Storage.DeleteServerFolderRecursiveAsync(AppState, fileStore, item);
+                                Storage.DeleteServerFolderRecursive(AppState, fileStore, item);
                                 foldersRemoved++;
                             }
 
@@ -1020,6 +1020,8 @@ public sealed class AppRunner
                             spinner.Fail($"{spinnerText} Failed!");
                         else
                             spinner.Text = $"Deleted {filesRemoved:N0} orphaned {filesRemoved.Pluralize("file", "files")} and {foldersRemoved:N0} {foldersRemoved.Pluralize("folder", "folders")} of orphaned files ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+
+                        await Task.CompletedTask;
 
                     }, Patterns.Dots, Patterns.Line);
 
@@ -1062,7 +1064,7 @@ public sealed class AppRunner
                             }
                         }
 
-                        await Storage.BringServerOnlineAsync(AppState, fileStore);
+                        Storage.BringServerOnline(AppState, fileStore);
                         
                         if (AppState.CancellationTokenSource.IsCancellationRequested)
                         {
