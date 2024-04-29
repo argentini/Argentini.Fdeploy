@@ -601,36 +601,32 @@ public sealed class AppRunner
 
             #region Deploy Online Copy Folders
 
-            if (AppState.Settings.Deployment.OnlineCopyFolderPaths.Count > 0)
+            if (AppState.Settings.Deployment.OnlineCopyFolderPaths.Count > 0 || AppState.Settings.Deployment.OnlineCopyFilePaths.Count > 0)
             {
-                await Spinner.StartAsync("Deploying while online: folders...", async spinner =>
+                await Spinner.StartAsync("Deploying online-safe files and folders...", async spinner =>
                 {
                     var spinnerText = spinner.Text;
                     var foldersToCreate = new List<string>();
                     var filesCopied = 0;
+                    ISMBFileStore? fileStore = null;
 
                     AppState.CurrentSpinner = spinner;
                     Timer.Restart();
 
-                    if (AppState.Settings.Deployment.OnlineCopyFolderPaths.Count > 0)
+                    try
                     {
-                        foreach (var folder in AppState.LocalFiles.ToList()
-                                     .Where(f => f is { IsFolder: true, IsOnlineCopy: true }))
+                        fileStore = Storage.GetFileStore(AppState, client);
+
+                        if (fileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
+                            return;
+
+                        if (AppState.Settings.Deployment.OnlineCopyFolderPaths.Count > 0)
                         {
-                            if (AppState.ServerFiles.Any(f =>
-                                    f.IsFolder && f.RelativeComparablePath == folder.RelativeComparablePath) == false)
-                                foldersToCreate.Add(
-                                    $"{AppState.Settings.ServerConnection.RemoteRootPath}\\{folder.RelativeComparablePath.SetSmbPathSeparators().TrimPath()}");
-                        }
-
-                        ISMBFileStore? fileStore = null;
-
-                        try
-                        {
-                            fileStore = Storage.GetFileStore(AppState, client);
-
-                            if (fileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
-                                return;
+                            foreach (var folder in AppState.LocalFiles.ToList().Where(f => f is { IsFolder: true, IsOnlineCopy: true }))
+                            {
+                                if (AppState.ServerFiles.Any(f => f.IsFolder && f.RelativeComparablePath == folder.RelativeComparablePath) == false)
+                                    foldersToCreate.Add($"{AppState.Settings.ServerConnection.RemoteRootPath}\\{folder.RelativeComparablePath.SetSmbPathSeparators().TrimPath()}");
+                            }
 
                             foreach (var folder in foldersToCreate)
                             {
@@ -642,49 +638,46 @@ public sealed class AppRunner
                                 spinner.Fail($"{spinnerText} Failed!");
                                 return;
                             }
+                        }                        
 
-                            var filesToCopy = AppState.LocalFiles.ToList()
-                                .Where(f => f is { IsFile: true, IsOnlineCopy: true }).ToList();
-                            var tasks = new List<Task>();
-                            var semaphore = new SemaphoreSlim(AppState.Settings.MaxThreadCount);
+                        var filesToCopy = AppState.LocalFiles.ToList().Where(f => f is { IsFile: true, IsOnlineCopy: true }).ToList();
+                        var tasks = new List<Task>();
+                        var semaphore = new SemaphoreSlim(AppState.Settings.MaxThreadCount);
 
-                            foreach (var file in filesToCopy)
-                            {
-                                await semaphore.WaitAsync();
-
-                                tasks.Add(Task.Run(() =>
-                                {
-                                    try
-                                    {
-                                        if (AppState.CancellationTokenSource.IsCancellationRequested)
-                                            return;
-
-                                        var serverFile = AppState.ServerFiles.FirstOrDefault(f =>
-                                            f.RelativeComparablePath == file.RelativeComparablePath &&
-                                            f.IsDeleted == false);
-
-                                        if (serverFile is not null && (AppState.Settings.CompareFileDates == false || serverFile.LastWriteTime == file.LastWriteTime) && (AppState.Settings.CompareFileSizes == false || serverFile.FileSizeBytes == file.FileSizeBytes))
-                                            return;
-
-                                        spinner.Text = $"{spinnerText} {file.FileNameOrPathSegment}...";
-                                        Storage.CopyFile(AppState, file);
-                                        filesCopied++;
-                                    }
-                                    finally
-                                    {
-                                        semaphore.Release();
-                                    }
-                                }));
-                            }
-
-                            await Task.WhenAll(tasks);
-                        }
-                        finally
+                        foreach (var file in filesToCopy)
                         {
-                            Storage.DisconnectFileStore(fileStore);
-                        }
-                    }
+                            await semaphore.WaitAsync();
 
+                            tasks.Add(Task.Run(() =>
+                            {
+                                try
+                                {
+                                    if (AppState.CancellationTokenSource.IsCancellationRequested)
+                                        return;
+
+                                    var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == file.RelativeComparablePath && f.IsDeleted == false);
+
+                                    if (serverFile is not null && (AppState.Settings.CompareFileDates == false || serverFile.LastWriteTime == file.LastWriteTime) && (AppState.Settings.CompareFileSizes == false || serverFile.FileSizeBytes == file.FileSizeBytes))
+                                        return;
+
+                                    spinner.Text = $"{spinnerText} {file.FileNameOrPathSegment}...";
+                                    Storage.CopyFile(AppState, file);
+                                    filesCopied++;
+                                }
+                                finally
+                                {
+                                    semaphore.Release();
+                                }
+                            }));
+                        }
+
+                        await Task.WhenAll(tasks);
+                    }
+                    finally
+                    {
+                        Storage.DisconnectFileStore(fileStore);
+                    }                    
+                    
                     if (AppState.CancellationTokenSource.IsCancellationRequested)
                     {
                         spinner.Fail($"{spinnerText} Failed!");
@@ -692,99 +685,7 @@ public sealed class AppRunner
                     else
                     {
                         if (filesCopied != 0)
-                            spinner.Text =
-                                $"{spinnerText} {AppState.Settings.Deployment.OnlineCopyFolderPaths.Count:N0} {AppState.Settings.Deployment.OnlineCopyFolderPaths.Count.Pluralize("folder", "folders")} with {filesCopied:N0} {filesCopied.Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-                        else
-                            spinner.Text = $"{spinnerText} Nothing to copy... Success!";
-                    }
-
-                    await Task.CompletedTask;
-
-                }, Patterns.Dots, Patterns.Line);
-
-                if (AppState.CancellationTokenSource.IsCancellationRequested)
-                    return;
-            }
-
-            #endregion
-
-            #region Deploy Online Copy Files
-
-            if (AppState.Settings.Deployment.OnlineCopyFilePaths.Count > 0)
-            {
-                await Spinner.StartAsync("Deploying while online: files...", async spinner =>
-                {
-                    var spinnerText = spinner.Text;
-                    var filesCopied = 0;
-
-                    AppState.CurrentSpinner = spinner;
-                    Timer.Restart();
-
-                    if (AppState.Settings.Deployment.OnlineCopyFilePaths.Count > 0)
-                    {
-                        ISMBFileStore ? fileStore = null;
-                        
-                        try
-                        {
-                            fileStore = Storage.GetFileStore(AppState, client);
-
-                            if (fileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
-                                return;
-
-                            var tasks = new List<Task>();
-                            var semaphore = new SemaphoreSlim(AppState.Settings.MaxThreadCount);
-                            
-                            foreach (var item in AppState.Settings.Deployment.OnlineCopyFilePaths)
-                            {
-                                await semaphore.WaitAsync();
-                                
-                                tasks.Add(Task.Run(() =>
-                                {
-                                    try
-                                    {
-                                        if (AppState.CancellationTokenSource.IsCancellationRequested)
-                                            return;
-
-                                        var localFile = AppState.LocalFiles.FirstOrDefault(f => f.RelativeComparablePath == item && f.IsDeleted == false);
-
-                                        if (localFile is null)
-                                        {
-                                            spinner.Fail($"{spinnerText} {item.GetLastPathSegment()}... Failed!");
-                                            AppState.Exceptions.Add($"Local file does not exist: `{item}`");
-                                            AppState.CancellationTokenSource.Cancel();
-                                            return;
-                                        }
-                                    
-                                        var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == localFile.RelativeComparablePath && f.IsDeleted == false);
-
-                                        if (serverFile is not null && (AppState.Settings.CompareFileDates == false || serverFile.LastWriteTime == localFile.LastWriteTime) && (AppState.Settings.CompareFileSizes == false || serverFile.FileSizeBytes == localFile.FileSizeBytes))
-                                            return;
-                                    
-                                        Storage.CopyFile(AppState, localFile);
-                                        filesCopied++;
-                                    }
-                                    finally
-                                    {
-                                        semaphore.Release();
-                                    }
-                                }));
-                            }
-
-                            await Task.WhenAll(tasks);
-                        }
-                        finally    
-                        {
-                            Storage.DisconnectFileStore(fileStore);
-                        }
-                    }
-                    if (AppState.CancellationTokenSource.IsCancellationRequested)
-                    {
-                        spinner.Fail($"{spinnerText} Failed!");
-                    }
-                    else
-                    {
-                        if (filesCopied != 0)
-                            spinner.Text = $"{spinnerText} {filesCopied:N0} {filesCopied.Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                            spinner.Text = $"{spinnerText} {AppState.Settings.Deployment.OnlineCopyFolderPaths.Count:N0} {AppState.Settings.Deployment.OnlineCopyFolderPaths.Count.Pluralize("folder", "folders")} with {filesCopied:N0} {filesCopied.Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
                         else
                             spinner.Text = $"{spinnerText} Nothing to copy... Success!";
                     }
@@ -926,8 +827,8 @@ public sealed class AppRunner
                             finally
                             {
                                 semaphore.Release();
-                                Storage.DisconnectClient(innerClient);
                                 Storage.DisconnectFileStore(fileStore);
+                                Storage.DisconnectClient(innerClient);
                             }
                         }));
                     }
