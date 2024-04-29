@@ -21,7 +21,7 @@ WriteRetryDelaySeconds: 10
 # Number of attempts to write before giving up; default is 10
 RetryCount: 10
 
-# Number of parallel network requests; default is 5
+# Number of parallel network requests; default is the number of logical processors
 MaxThreadCount: 5
 
 ServerConnection:
