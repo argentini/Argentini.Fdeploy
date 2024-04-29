@@ -23,6 +23,9 @@ public static class Storage
             if (FolderPathShouldBeIgnoredDuringScan(appState, fo))
                 continue;
 
+            if (appState.CurrentSpinner is not null)
+                appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.Text[..appState.CurrentSpinner.Text.IndexOf("...", StringComparison.Ordinal)]}... {fo.RelativeComparablePath}...";
+            
             appState.LocalFiles.Add(fo);
 
             await RecurseLocalPathAsync(appState, subdir);
@@ -524,7 +527,7 @@ public static class Storage
                             return;
 
                         if (appState.CurrentSpinner is not null)
-                            appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.Text[..appState.CurrentSpinner.Text.IndexOf("...", StringComparison.Ordinal)]}... {directory.FileName}/...";
+                            appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.Text[..appState.CurrentSpinner.Text.IndexOf("...", StringComparison.Ordinal)]}... {fo.RelativeComparablePath}...";
 
                         appState.ServerFiles.Add(fo);
 
@@ -548,8 +551,8 @@ public static class Storage
         }
         finally
         {
-            DisconnectClient(client);
             DisconnectFileStore(fileStore);
+            DisconnectClient(client);
         }
     }
     
@@ -955,8 +958,8 @@ public static class Storage
         }
         finally
         {
-            DisconnectClient(client);
             DisconnectFileStore(fileStore);
+            DisconnectClient(client);
         }
     }
     
