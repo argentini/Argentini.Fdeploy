@@ -93,6 +93,7 @@ public sealed class AppRunner
 
         #if DEBUG
 
+        //AppState.YamlProjectFilePath = Path.Combine("c:\\code\\Fynydd-Website-2024\\UmbracoCms", "fdeploy-staging.yml");
         AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Fynydd-Website-2024/UmbracoCms", "fdeploy-staging.yml");
         
         #endif
@@ -582,7 +583,7 @@ public sealed class AppRunner
 
                 Timer.Restart();
 
-                await Storage.RecurseServerPathAsync(AppState, AppState.Settings.ServerConnection.RemoteRootPath);
+                Storage.RecurseServerPath(AppState, AppState.Settings.ServerConnection.RemoteRootPath);
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
                     spinner.Fail($"{spinnerText} Failed!");

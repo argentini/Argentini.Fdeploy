@@ -385,7 +385,7 @@ public static class Storage
     
     #region Server Storage
     
-    public static async Task RecurseServerPathAsync(AppState appState, string path, bool includeHidden = false)
+    public static void RecurseServerPath(AppState appState, string path, bool includeHidden = false)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -449,7 +449,7 @@ public static class Storage
             else
             {
                 appState.Exceptions.Add($"Cannot index server path `{path}`");
-                await appState.CancellationTokenSource.CancelAsync();
+                appState.CancellationTokenSource.Cancel();
                 return;
             }
 
@@ -464,7 +464,7 @@ public static class Storage
             {
                 foreach (var file in files)
                 {
-                    await semaphore.WaitAsync();
+                    semaphore.Wait();
                     
                     tasks.Add(Task.Run(() =>
                     {
@@ -494,7 +494,7 @@ public static class Storage
                     }));
                 }
 
-                await Task.WhenAll(tasks);
+                Task.WhenAll(tasks).GetAwaiter().GetResult();
             }
 
             #endregion
@@ -508,7 +508,7 @@ public static class Storage
             
             foreach (var directory in directories)
             {
-                await semaphore.WaitAsync();
+                semaphore.Wait();
 
                 tasks.Add(Task.Run(async () =>
                 {
@@ -528,7 +528,7 @@ public static class Storage
 
                         appState.ServerFiles.Add(fo);
 
-                        await RecurseServerPathAsync(appState, directoryPath, includeHidden);
+                        RecurseServerPath(appState, directoryPath, includeHidden);
                     }
                     catch
                     {
@@ -542,7 +542,7 @@ public static class Storage
                 }));
             }
 
-            await Task.WhenAll(tasks);
+            Task.WhenAll(tasks).GetAwaiter().GetResult();
 
             #endregion
         }
