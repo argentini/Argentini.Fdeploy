@@ -6,9 +6,9 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
 
-        <AssemblyVersion>1.1.2.0</AssemblyVersion>
-        <FileVersion>1.1.2.0</FileVersion>
-        <PackageVersion>1.1.2</PackageVersion>
+        <AssemblyVersion>1.1.3.0</AssemblyVersion>
+        <FileVersion>1.1.3.0</FileVersion>
+        <PackageVersion>1.1.3</PackageVersion>
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>fdeploy</ToolCommandName>
         <PackageOutputPath>./nupkg</PackageOutputPath>
@@ -27,7 +27,7 @@
         <PackageProjectUrl>https://github.com/argentini/Argentini.Fdeploy</PackageProjectUrl>
         <RepositoryUrl>https://github.com/argentini/Argentini.Deploy</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
-        <PackageReleaseNotes>Offline file batches for performance, more robust connection handling with retries and output</PackageReleaseNotes>
+        <PackageReleaseNotes>Removed Parallel taks in favor of task enumerables, added FileStore disconnects</PackageReleaseNotes>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
         <PackageIcon>fdeploy-icon.png</PackageIcon>
