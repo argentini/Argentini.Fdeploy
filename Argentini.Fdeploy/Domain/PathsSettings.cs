@@ -3,7 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 namespace Argentini.Fdeploy.Domain;
 
 [SuppressMessage("ReSharper", "CollectionNeverUpdated.Global")]
-public sealed class DeploymentSettings
+public sealed class PathsSettings
 {
     public List<string> OnlineCopyFolderPaths { get; set; } = [];
     public List<string> OnlineCopyFilePaths { get; set; } = [];

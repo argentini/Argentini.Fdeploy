@@ -21,7 +21,7 @@ public sealed class LocalFileObject : FileObject
 
         AbsoluteServerPath = $"{appState.Settings.ServerConnection.RemoteRootPath}\\{RelativeComparablePath}".FormatServerPath(appState);
         
-        foreach (var staticFolderPath in appState.Settings.Deployment.OnlineCopyFolderPaths)
+        foreach (var staticFolderPath in appState.Settings.Paths.OnlineCopyFolderPaths)
         {
             if (RelativeComparablePath.StartsWith(staticFolderPath) == false)
                 continue;
@@ -30,7 +30,7 @@ public sealed class LocalFileObject : FileObject
             return;
         }
         
-        foreach (var staticFilePath in appState.Settings.Deployment.OnlineCopyFilePaths)
+        foreach (var staticFilePath in appState.Settings.Paths.OnlineCopyFilePaths)
         {
             if (RelativeComparablePath != staticFilePath)
                 continue;

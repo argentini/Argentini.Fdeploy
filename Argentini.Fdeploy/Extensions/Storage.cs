@@ -151,7 +151,7 @@ public static class Storage
     
     public static bool FolderPathShouldBeIgnoredDuringScan(AppState appState, FileObject fo)
     {
-        foreach (var ignorePath in appState.Settings.Deployment.IgnoreFolderPaths)
+        foreach (var ignorePath in appState.Settings.Paths.IgnoreFolderPaths)
         {
             if (fo.RelativeComparablePath != ignorePath)
                 continue;
@@ -159,12 +159,12 @@ public static class Storage
             return true;
         }
 
-        return appState.Settings.Deployment.IgnoreFoldersNamed.Contains(fo.FileNameOrPathSegment);
+        return appState.Settings.Paths.IgnoreFoldersNamed.Contains(fo.FileNameOrPathSegment);
     }
 
     public static bool FilePathShouldBeIgnoredDuringScan(AppState appState, FileObject fo)
     {
-        foreach (var ignorePath in appState.Settings.Deployment.IgnoreFilePaths)
+        foreach (var ignorePath in appState.Settings.Paths.IgnoreFilePaths)
         {
             if (fo.RelativeComparablePath != ignorePath)
                 continue;
@@ -172,7 +172,7 @@ public static class Storage
             return true;
         }
 
-        return appState.Settings.Deployment.IgnoreFilesNamed.Contains(fo.FileNameOrPathSegment);
+        return appState.Settings.Paths.IgnoreFilesNamed.Contains(fo.FileNameOrPathSegment);
     }
     
     #endregion

@@ -1,6 +1,6 @@
 # Fdeploy Reference Configuration
 # ===============================
-# Configuration files must be named `fdeploy.yml` or  `fdeploy-{name}.yml` so fdeploy can call a configuration by its name
+# Configuration files must be named `fdeploy.yml` or `fdeploy-{name}.yml` so fdeploy can call a configuration by its name
 # (e.g. fdeploy production). You should create files for each deployment target.
 # ALL PATHS (EXCEPT REMOTE ROOT) ARE RELATIVE TO THE WEB APP ROOT
 
@@ -31,23 +31,6 @@ CompareFileDates: true
 # When deploying changed files only update files with different file sizes; default is true
 CompareFileSizes: true
 
-ServerConnection:
-    
-    ServerAddress: 127.0.0.1
-    ShareName: D$
-    Domain: domain
-    UserName: username
-    Password: password
-    
-    # Connection and authentication timeout ms; default is 15000
-    ConnectTimeoutMs: 15000
-
-    # Response timeout ms; default is 15000
-    ResponseTimeoutMs: 15000
-
-    # Remote path to the root of the website without the share name
-    RemoteRootPath: "\\web\\website.com\\www"
-
 Project:
 
     # Project file (.csproj) path and filename, relative to the location of this file
@@ -73,7 +56,24 @@ Project:
         - "umbraco/Data/TEMP"
         - "wwwroot/media"
 
-Deployment:
+ServerConnection:
+    
+    ServerAddress: 127.0.0.1
+    ShareName: D$
+    Domain: domain
+    UserName: username
+    Password: password
+    
+    # Connection and authentication timeout ms; default is 15000
+    ConnectTimeoutMs: 15000
+
+    # Response timeout ms; default is 15000
+    ResponseTimeoutMs: 15000
+
+    # Remote path to the root of the website without the share name
+    RemoteRootPath: "\\web\\website.com\\www"
+
+Paths:
 
     # Paths to folders that can be copied while the server is running;
     # folders are copied before the server is taken offline which shortens server downtime;
@@ -108,7 +108,7 @@ Deployment:
         - "Log"
         - "Logs"
 
-AppOffline:
+Offline:
     
     MetaTitle: "Unavailable for Maintenance"
     PageTitle: "Unavailable for Maintenance"

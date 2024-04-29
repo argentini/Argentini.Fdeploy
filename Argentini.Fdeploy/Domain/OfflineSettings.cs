@@ -1,6 +1,6 @@
 namespace Argentini.Fdeploy.Domain;
 
-public sealed class AppOfflineSettings
+public sealed class OfflineSettings
 {
     public string MetaTitle { get; set; } = "Unavailable for Maintenance";
     public string PageTitle { get; set; } = "Unavailable for Maintenance";

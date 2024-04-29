@@ -145,11 +145,11 @@ public sealed class AppRunner
         AppState.Settings.Project.CopyFilesToPublishFolder.NormalizePaths();
         AppState.Settings.Project.CopyFoldersToPublishFolder.NormalizePaths();
 
-        AppState.Settings.Deployment.OnlineCopyFilePaths.NormalizePaths();
-        AppState.Settings.Deployment.OnlineCopyFolderPaths.NormalizePaths();
+        AppState.Settings.Paths.OnlineCopyFilePaths.NormalizePaths();
+        AppState.Settings.Paths.OnlineCopyFolderPaths.NormalizePaths();
 
-        AppState.Settings.Deployment.IgnoreFilePaths.NormalizePaths();
-        AppState.Settings.Deployment.IgnoreFolderPaths.NormalizePaths();
+        AppState.Settings.Paths.IgnoreFilePaths.NormalizePaths();
+        AppState.Settings.Paths.IgnoreFolderPaths.NormalizePaths();
 
         var newList = new List<string>();
         
@@ -309,8 +309,7 @@ public sealed class AppRunner
 			await Console.Out.WriteLineAsync();
 			await Console.Out.WriteLineAsync("Fdeploy will look in the current working directory for a file named `fdeploy.yml`.");
 			await Console.Out.WriteLineAsync("You can also pass a path to a file named `fdeploy-{name}.yml` or even just pass");
-			await Console.Out.WriteLineAsync("the `{name}` portion which will look for a file named `fdeploy-{name}.yml` in the");
-            await Console.Out.WriteLineAsync("current working directory.");
+			await Console.Out.WriteLineAsync("the `{name}` portion which will look for a file named `fdeploy-{name}.yml`.");
 			await Console.Out.WriteLineAsync();
 			await Console.Out.WriteLineAsync("Command Line Usage:");
 			await Console.Out.WriteLineAsync(Strings.ThinLine.Repeat("Command Line Usage:".Length));
@@ -337,9 +336,9 @@ public sealed class AppRunner
         #endregion
 
         AppState.AppOfflineMarkup = await File.ReadAllTextAsync(Path.Combine(await GetEmbeddedHtmlPathAsync(), "AppOffline.html"), AppState.CancellationTokenSource.Token);
-        AppState.AppOfflineMarkup = AppState.AppOfflineMarkup.Replace("{{MetaTitle}}", AppState.Settings.AppOffline.MetaTitle);
-        AppState.AppOfflineMarkup = AppState.AppOfflineMarkup.Replace("{{PageTitle}}", AppState.Settings.AppOffline.PageTitle);
-        AppState.AppOfflineMarkup = AppState.AppOfflineMarkup.Replace("{{PageHtml}}", AppState.Settings.AppOffline.ContentHtml);
+        AppState.AppOfflineMarkup = AppState.AppOfflineMarkup.Replace("{{MetaTitle}}", AppState.Settings.Offline.MetaTitle);
+        AppState.AppOfflineMarkup = AppState.AppOfflineMarkup.Replace("{{PageTitle}}", AppState.Settings.Offline.PageTitle);
+        AppState.AppOfflineMarkup = AppState.AppOfflineMarkup.Replace("{{PageHtml}}", AppState.Settings.Offline.ContentHtml);
 
         await ColonOutAsync("Started Deployment", $"{DateTime.Now:HH:mm:ss.fff}");
         await Console.Out.WriteLineAsync();
@@ -601,7 +600,7 @@ public sealed class AppRunner
 
             #region Deploy Online Copy Folders
 
-            if (AppState.Settings.Deployment.OnlineCopyFolderPaths.Count > 0 || AppState.Settings.Deployment.OnlineCopyFilePaths.Count > 0)
+            if (AppState.Settings.Paths.OnlineCopyFolderPaths.Count > 0 || AppState.Settings.Paths.OnlineCopyFilePaths.Count > 0)
             {
                 await Spinner.StartAsync("Deploying online-safe files and folders...", async spinner =>
                 {
@@ -624,7 +623,7 @@ public sealed class AppRunner
                             return;
                         }
                         
-                        if (AppState.Settings.Deployment.OnlineCopyFolderPaths.Count > 0)
+                        if (AppState.Settings.Paths.OnlineCopyFolderPaths.Count > 0)
                         {
                             foreach (var folder in AppState.LocalFiles.Where(f => f is { IsFolder: true, IsOnlineCopy: true }).ToList())
                             {
@@ -725,7 +724,7 @@ public sealed class AppRunner
                     else
                     {
                         if (filesCopied != 0)
-                            spinner.Text = $"{spinnerText} {AppState.Settings.Deployment.OnlineCopyFolderPaths.Count:N0} {AppState.Settings.Deployment.OnlineCopyFolderPaths.Count.Pluralize("folder", "folders")} with {filesCopied:N0} {filesCopied.Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                            spinner.Text = $"{spinnerText} {AppState.Settings.Paths.OnlineCopyFolderPaths.Count:N0} {AppState.Settings.Paths.OnlineCopyFolderPaths.Count.Pluralize("folder", "folders")} with {filesCopied:N0} {filesCopied.Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
                         else
                             spinner.Text = $"{spinnerText} Nothing to copy... Success!";
                     }
@@ -955,7 +954,7 @@ public sealed class AppRunner
                         // Remove paths that enclose ignore paths
                         foreach (var item in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
                         {
-                            foreach (var ignorePath in AppState.Settings.Deployment.IgnoreFolderPaths)
+                            foreach (var ignorePath in AppState.Settings.Paths.IgnoreFolderPaths)
                             {
                                 if (ignorePath.StartsWith(item.RelativeComparablePath) == false)
                                     continue;
