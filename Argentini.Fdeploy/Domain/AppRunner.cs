@@ -132,6 +132,35 @@ public sealed class AppRunner
         if (AppState.Settings.MaxThreadCount < 1)
             AppState.Settings.MaxThreadCount = new Settings().MaxThreadCount;
         
+        AppState.ProjectPath = AppState.YamlProjectFilePath[..AppState.YamlProjectFilePath.LastIndexOf(Path.DirectorySeparatorChar)];
+
+        #region Credentials
+        
+        AppState.YamlCredsFilePath = Path.Combine(AppState.ProjectPath, "fdeploy-creds.yml");
+
+        if (File.Exists(AppState.YamlCredsFilePath) == false)
+        {
+            AppState.YamlCredsFilePath = Path.Combine(AppState.ProjectPath, AppState.YamlProjectFilePath.GetLastPathSegment().Replace(".yml", "-creds.yml"));
+
+            if (File.Exists(AppState.YamlCredsFilePath) == false)
+            {
+                AppState.YamlCredsFilePath = string.Empty;
+            }
+        }        
+
+        if (AppState.YamlCredsFilePath != string.Empty)
+        {
+            yaml = File.ReadAllText(AppState.YamlCredsFilePath);
+            
+            var credentials = deserializer.Deserialize<Credentials>(yaml);
+
+            AppState.Settings.ServerConnection.Domain = credentials.Domain;
+            AppState.Settings.ServerConnection.UserName = credentials.UserName;
+            AppState.Settings.ServerConnection.Password = credentials.Password;
+        }        
+
+        #endregion
+        
         #endregion
 
         #region Normalize Paths
@@ -296,9 +325,14 @@ public sealed class AppRunner
             if (AppState.CancellationTokenSource.IsCancellationRequested == false)
     			await File.WriteAllTextAsync(Path.Combine(Directory.GetCurrentDirectory(), "fdeploy.yml"), yaml, AppState.CancellationTokenSource.Token);
 			
+            yaml = await File.ReadAllTextAsync(Path.Combine(await GetEmbeddedYamlPathAsync(), "fdeploy-creds.yml"), AppState.CancellationTokenSource.Token);
+
+            if (AppState.CancellationTokenSource.IsCancellationRequested == false)
+                await File.WriteAllTextAsync(Path.Combine(Directory.GetCurrentDirectory(), "fdeploy-creds.yml"), yaml, AppState.CancellationTokenSource.Token);
+            
             if (AppState.CancellationTokenSource.IsCancellationRequested == false)
             {
-			    await Console.Out.WriteLineAsync($"Created fdeploy.yml file at {Directory.GetCurrentDirectory()}");
+			    await Console.Out.WriteLineAsync($"Created `fdeploy.yml` and `fdeploy-creds.yml` at {Directory.GetCurrentDirectory()}");
 			    await Console.Out.WriteLineAsync();
     			return;
             }
@@ -307,28 +341,48 @@ public sealed class AppRunner
 		else if (HelpMode)
 		{
 			await Console.Out.WriteLineAsync();
-			await Console.Out.WriteLineAsync("Fdeploy will look in the current working directory for a file named `fdeploy.yml`.");
-			await Console.Out.WriteLineAsync("You can also pass a path to a file named `fdeploy-{name}.yml` or even just pass");
-			await Console.Out.WriteLineAsync("the `{name}` portion which will look for a file named `fdeploy-{name}.yml`.");
-			await Console.Out.WriteLineAsync();
-			await Console.Out.WriteLineAsync("Command Line Usage:");
-			await Console.Out.WriteLineAsync(Strings.ThinLine.Repeat("Command Line Usage:".Length));
-			await Console.Out.WriteLineAsync("fdeploy [init|help|version]");
-			await Console.Out.WriteLineAsync("fdeploy");
-            await Console.Out.WriteLineAsync("fdeploy {path to fdeploy-{name}.yml file}");
-            await Console.Out.WriteLineAsync("fdeploy {name}");
-			await Console.Out.WriteLineAsync();
-			await Console.Out.WriteLineAsync("Commands:");
-			await Console.Out.WriteLineAsync(Strings.ThinLine.Repeat("Commands:".Length));
-			await Console.Out.WriteLineAsync("init      : Create starter `fdeploy.yml` in the current working directory");
-			await Console.Out.WriteLineAsync("version   : Show the Fdeploy version number");
-			await Console.Out.WriteLineAsync("help      : Show this help message");
+            
+            const string helpText = """
+                                    Fdeploy will look in the current working directory for a deployment file named `fdeploy.yml`._
+                                    You can also pass a path to a file named `fdeploy-{name}.yml` or even just pass the `{name}` portion which will look for a file named `fdeploy-{name}.yml`.
+
+                                    Although you can put server credentials in the deployment file under the ServerConnection section, it is recommended that you instead use a separate credentials file and exclude it from your source code repository (e.g. git)._
+                                    The name of the file can be either `fdeploy-creds.yml` which is used for all deployment files in a given project folder, or use a deployment filename with `-creds` at the end (e.g. `fdeploy-staging-creds.yml`).
+
+                                    Command Line Usage:
+                                    """;
+
+            const string exampleText = """
+                                       fdeploy [init|help|version]
+                                       fdeploy
+                                       fdeploy {path to fdeploy-{name}.yml file}
+                                       fdeploy {name}
+
+                                       Commands:
+                                       """;
+
+            const string commandsText = """
+                                        init      : Create starter `fdeploy.yml` and `fdeploy-creds.yml` files in the
+                                                  : current working directory
+                                        version   : Show the Fdeploy version number
+                                        help      : Show this help message
+                                        """;
+
+            helpText.WriteToConsole(80);
+            await Console.Out.WriteLineAsync(Strings.ThinLine.Repeat("Command Line Usage:".Length));
+            exampleText.WriteToConsole(80);
+            await Console.Out.WriteLineAsync(Strings.ThinLine.Repeat("Commands:".Length));
+            commandsText.WriteToConsole(80);
+            
 			await Console.Out.WriteLineAsync();
 
 			return;
 		}
 
 		await ColonOutAsync("Settings File", AppState.YamlProjectFilePath);
+        
+        if (AppState.YamlCredsFilePath != string.Empty)
+            await ColonOutAsync("Credentials File", AppState.YamlCredsFilePath);
 
         if (AppState.CancellationTokenSource.IsCancellationRequested)
             return;

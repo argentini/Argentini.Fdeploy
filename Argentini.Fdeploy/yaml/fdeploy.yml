@@ -60,9 +60,6 @@ ServerConnection:
     
     ServerAddress: 127.0.0.1
     ShareName: D$
-    Domain: domain
-    UserName: username
-    Password: password
     
     # Connection and authentication timeout ms; default is 15000
     ConnectTimeoutMs: 15000

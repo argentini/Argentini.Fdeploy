@@ -1,0 +1,9 @@
+# Fdeploy Credentials Reference Configuration
+# ===========================================
+# This file must be the same as its configuration file (e.g. `fdeploy-staging.yml`),
+# but with `-creds` appended (e.g. `fdeploy-staging-creds.yml`).
+# A file named `fdeploy-creds.yml` will be used for all configuration files in the project folder.
+
+Domain: mydomain
+UserName: jsmith
+Password: P@ssw0rd
