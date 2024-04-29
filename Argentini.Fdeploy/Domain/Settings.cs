@@ -4,6 +4,8 @@ public sealed class Settings
 {
     public bool DeleteOrphans { get; set; } = true;
     public bool TakeServerOffline { get; set; } = true;
+    public bool CompareFileDates { get; set; } = true;
+    public bool CompareFileSizes { get; set; } = true;
     
     public int ServerOfflineDelaySeconds { get; set; }
     public int ServerOnlineDelaySeconds { get; set; }
