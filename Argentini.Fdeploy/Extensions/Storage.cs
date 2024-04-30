@@ -435,7 +435,7 @@ public static class Storage
     
     #region Server Storage
     
-    public static void RecurseServerPath(AppState appState, string path, bool includeHidden = false)
+    public static async Task RecurseServerPathAsync(AppState appState, string path, bool includeHidden = false)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -499,52 +499,38 @@ public static class Storage
             else
             {
                 appState.Exceptions.Add($"Cannot index server path `{path}`");
-                appState.CancellationTokenSource.Cancel();
+                await appState.CancellationTokenSource.CancelAsync();
                 return;
             }
 
             #endregion
 
-            var tasks = new List<Task>();
-            var semaphore = new SemaphoreSlim(appState.Settings.MaxThreadCount);
-            
             #region Files
 
             if (files.Count != 0)
             {
                 foreach (var file in files.OrderBy(f => f.FileName))
                 {
-                    semaphore.Wait();
-                    
-                    tasks.Add(Task.Run(() =>
+                    try
                     {
-                        try
-                        {
-                            if (appState.CancellationTokenSource.IsCancellationRequested)
-                                return;
+                        if (appState.CancellationTokenSource.IsCancellationRequested)
+                            return;
 
-                            var filePath = $"{path}\\{file.FileName}";
+                        var filePath = $"{path}\\{file.FileName}";
 
-                            var fo = new ServerFileObject(appState, filePath.Trim('\\'), file.LastWriteTime.ToFileTimeUtc(), file.EndOfFile, true, appState.Settings.ServerConnection.RemoteRootPath);
+                        var fo = new ServerFileObject(appState, filePath.Trim('\\'), file.LastWriteTime.ToFileTimeUtc(), file.EndOfFile, true, appState.Settings.ServerConnection.RemoteRootPath);
 
-                            if (FilePathShouldBeIgnoredDuringScan(appState, fo))
-                                return;
+                        if (FilePathShouldBeIgnoredDuringScan(appState, fo))
+                            return;
 
-                            appState.ServerFiles.Add(fo);
-                        }
-                        catch
-                        {
-                            appState.Exceptions.Add($"Could not process server file `{file.FileName}`");
-                            appState.CancellationTokenSource.Cancel();
-                        }
-                        finally
-                        {
-                            semaphore.Release();
-                        }
-                    }));
+                        appState.ServerFiles.Add(fo);
+                    }
+                    catch
+                    {
+                        appState.Exceptions.Add($"Could not process server file `{file.FileName}`");
+                        await appState.CancellationTokenSource.CancelAsync();
+                    }
                 }
-
-                Task.WhenAll(tasks).GetAwaiter().GetResult();
             }
 
             #endregion
@@ -554,11 +540,12 @@ public static class Storage
             if (directories.Count == 0)
                 return;
 
-            tasks.Clear();
+            var tasks = new List<Task>();
+            var semaphore = new SemaphoreSlim(appState.Settings.MaxThreadCount);
             
             foreach (var directory in directories.OrderBy(f => f.FileName))
             {
-                semaphore.Wait();
+                await semaphore.WaitAsync();
 
                 tasks.Add(Task.Run(async () =>
                 {
@@ -578,7 +565,7 @@ public static class Storage
 
                         appState.ServerFiles.Add(fo);
 
-                        RecurseServerPath(appState, directoryPath, includeHidden);
+                        await RecurseServerPathAsync(appState, directoryPath, includeHidden);
                     }
                     catch
                     {
@@ -592,7 +579,7 @@ public static class Storage
                 }));
             }
 
-            Task.WhenAll(tasks).GetAwaiter().GetResult();
+            await Task.WhenAll(tasks);
 
             #endregion
         }
@@ -980,7 +967,11 @@ public static class Storage
             fileStore ??= client.GetFileStore(appState);
 
             if (client is null || client.IsConnected == false || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
+            {
+                appState.Exceptions.Add("Could not reconnect the SMB client during file copy");
+                appState.CancellationTokenSource.Cancel();
                 return;
+            }
 
             localFilePath = localFilePath.FormatLocalPath(appState);
             
@@ -992,10 +983,10 @@ public static class Storage
             }
          
             var spinnerText = appState.CurrentSpinner?.Text ?? string.Empty;
-
-            if (spinnerText.IndexOf("...", StringComparison.Ordinal) > 0)
-                spinnerText = spinnerText[..spinnerText.IndexOf("...", StringComparison.Ordinal)] + "...";
             
+            if (spinnerText.IndexOf("...", StringComparison.Ordinal) > 0)
+                spinnerText = spinnerText[..spinnerText.IndexOf("...", StringComparison.Ordinal)] + "...";            
+
             if (appState.CurrentSpinner is not null)
                 appState.CurrentSpinner.Text = $"{spinnerText} {localFilePath.GetLastPathSegment()} (0%)...";
             

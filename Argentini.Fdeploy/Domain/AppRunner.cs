@@ -636,7 +636,7 @@ public sealed class AppRunner
 
                 Timer.Restart();
 
-                Storage.RecurseServerPath(AppState, AppState.Settings.ServerConnection.RemoteRootPath);
+                await Storage.RecurseServerPathAsync(AppState, AppState.Settings.ServerConnection.RemoteRootPath);
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
                     spinner.Fail($"{spinnerText} Failed!");
@@ -652,7 +652,7 @@ public sealed class AppRunner
 
             #endregion
 
-            #region Deploy Online Copy Folders
+            #region Deploy Online Copy Files And Folders
 
             if (AppState.Settings.Paths.OnlineCopyFolderPaths.Count > 0 || AppState.Settings.Paths.OnlineCopyFilePaths.Count > 0)
             {
@@ -689,6 +689,8 @@ public sealed class AppRunner
                             {
                                 client.EnsureServerPathExists(fileStore, AppState, folder);
                             }
+
+                            spinner.Text = spinnerText;
 
                             if (AppState.CancellationTokenSource.IsCancellationRequested)
                             {
@@ -880,6 +882,8 @@ public sealed class AppRunner
                 {
                     client.EnsureServerPathExists(fileStore, AppState, folder);
                 }
+
+                spinner.Text = spinnerText;
 
                 Storage.DisconnectFileStore(fileStore);
                 
