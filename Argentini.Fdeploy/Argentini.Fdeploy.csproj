@@ -6,9 +6,9 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
 
-        <AssemblyVersion>1.2.1.0</AssemblyVersion>
-        <FileVersion>1.2.1.0</FileVersion>
-        <PackageVersion>1.2.1</PackageVersion>
+        <AssemblyVersion>1.2.2.0</AssemblyVersion>
+        <FileVersion>1.2.2.0</FileVersion>
+        <PackageVersion>1.2.2</PackageVersion>
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>fdeploy</ToolCommandName>
         <PackageOutputPath>./nupkg</PackageOutputPath>
@@ -27,7 +27,7 @@
         <PackageProjectUrl>https://github.com/argentini/Argentini.Fdeploy</PackageProjectUrl>
         <RepositoryUrl>https://github.com/argentini/Argentini.Deploy</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
-        <PackageReleaseNotes>Fixed some copy output issues</PackageReleaseNotes>
+        <PackageReleaseNotes>Server path shown on startup, new folders now created while online</PackageReleaseNotes>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
         <PackageIcon>fdeploy-icon.png</PackageIcon>
