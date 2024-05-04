@@ -653,126 +653,142 @@ public sealed class AppRunner
 
             #endregion
 
-            #region Deploy Online Copy Files And Folders
+            #region Create New Folders
+            
+            var foldersToCreate = new List<string>();
+
+            await Spinner.StartAsync("Create new folders...", async spinner =>
+            {
+                AppState.CurrentSpinner = spinner;
+
+                var spinnerText = spinner.Text;
+
+                foreach (var folder in AppState.LocalFiles.Where(f => f is { IsFolder: true }).ToList())
+                {
+                    if (AppState.ServerFiles.Any(f => f.IsFolder && f.RelativeComparablePath == folder.RelativeComparablePath) == false)
+                        foldersToCreate.Add($"{AppState.Settings.ServerConnection.RemoteRootPath}\\{folder.RelativeComparablePath.SetSmbPathSeparators().TrimPath()}");
+                }
+
+                if (foldersToCreate.Count > 0)
+                {
+                    var fileStore = client.GetFileStore(AppState);
+
+                    try
+                    {
+                        if (fileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
+                            return;
+
+                        foreach (var folder in foldersToCreate.OrderBy(f => f))
+                        {
+                            client.EnsureServerPathExists(fileStore, AppState, folder);
+                        }
+                    }
+
+                    finally
+                    {
+                        Storage.DisconnectFileStore(fileStore);
+                    }
+
+                    if (AppState.CancellationTokenSource.IsCancellationRequested)
+                        spinner.Fail($"{spinnerText} Failed!");
+                    else
+                        spinner.Text = $"{spinnerText} {foldersToCreate.Count:N0} {foldersToCreate.Count.Pluralize("folder", "folders")} created ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                }
+
+                else
+                {
+                    spinner.Text = $"{spinnerText} No new folders... Success!";
+                }
+                
+                await Task.CompletedTask;
+
+            }, Patterns.Dots, Patterns.Line);
+
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                return;
+            
+            #endregion
+
+            #region Deploy Files While Online
 
             if (AppState.Settings.Paths.OnlineCopyFolderPaths.Count > 0 || AppState.Settings.Paths.OnlineCopyFilePaths.Count > 0)
             {
-                await Spinner.StartAsync("Deploy files and folders (before offline)...", async spinner =>
+                await Spinner.StartAsync("Deploy files (server online)...", async spinner =>
                 {
                     var spinnerText = spinner.Text;
-                    var foldersToCreate = new List<string>();
                     var filesCopied = 0;
-                    ISMBFileStore? fileStore = null;
 
                     AppState.CurrentSpinner = spinner;
                     Timer.Restart();
 
-                    try
+                    var filesToCopy = AppState.LocalFiles.Where(f => f is { IsFile: true, IsOnlineCopy: true }).OrderBy(f => f.RelativeComparablePath).ToList();
+
+                    const int groupSize = 10;
+
+                    // Threads of `groupSize` items to copy concurrently
+                    var arrayOfLists = filesToCopy
+                        .Select((item, index) => new { Item = item, Index = index })
+                        .GroupBy(x => x.Index / groupSize)
+                        .Select(g => g.Select(x => x.Item).ToList())
+                        .ToArray();
+                    
+                    var tasks = new List<Task>();
+                    var semaphore = new SemaphoreSlim(AppState.Settings.MaxThreadCount);
+
+                    foreach (var group in arrayOfLists)
                     {
-                        fileStore = client.GetFileStore(AppState);
+                        await semaphore.WaitAsync();
 
-                        if (fileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
+                        tasks.Add(Task.Run(() =>
                         {
-                            AppState.Exceptions.Add("Could not establish FileStore when copying online folders");
-                            await AppState.CancellationTokenSource.CancelAsync();
-                            return;
-                        }
-                        
-                        if (AppState.Settings.Paths.OnlineCopyFolderPaths.Count > 0)
-                        {
-                            foreach (var folder in AppState.LocalFiles.Where(f => f is { IsFolder: true, IsOnlineCopy: true }).ToList())
+                            SMB2Client? innerClient = null;
+                            ISMBFileStore? innerFileStore = null;
+
+                            try
                             {
-                                if (AppState.ServerFiles.Any(f => f.IsFolder && f.RelativeComparablePath == folder.RelativeComparablePath) == false)
-                                    foldersToCreate.Add($"{AppState.Settings.ServerConnection.RemoteRootPath}\\{folder.RelativeComparablePath.SetSmbPathSeparators().TrimPath()}");
-                            }
+                                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                                    return;
 
-                            foreach (var folder in foldersToCreate.OrderBy(f => f))
-                            {
-                                client.EnsureServerPathExists(fileStore, AppState, folder);
-                            }
-
-                            spinner.Text = spinnerText;
-
-                            if (AppState.CancellationTokenSource.IsCancellationRequested)
-                            {
-                                spinner.Fail($"{spinnerText} Failed!");
-                                return;
-                            }
-                        }                        
-
-                        var filesToCopy = AppState.LocalFiles.Where(f => f is { IsFile: true, IsOnlineCopy: true }).OrderBy(f => f.RelativeComparablePath).ToList();
-
-                        const int groupSize = 10;
-
-                        // Threads of `groupSize` items to copy concurrently
-                        var arrayOfLists = filesToCopy
-                            .Select((item, index) => new { Item = item, Index = index })
-                            .GroupBy(x => x.Index / groupSize)
-                            .Select(g => g.Select(x => x.Item).ToList())
-                            .ToArray();
-                        
-                        var tasks = new List<Task>();
-                        var semaphore = new SemaphoreSlim(AppState.Settings.MaxThreadCount);
-
-                        foreach (var group in arrayOfLists)
-                        {
-                            await semaphore.WaitAsync();
-
-                            tasks.Add(Task.Run(() =>
-                            {
-                                SMB2Client? innerClient = null;
-                                ISMBFileStore? innerFileStore = null;
-
-                                try
+                                innerClient = Storage.CreateClient(AppState);
+                    
+                                if (innerClient is null || AppState.CancellationTokenSource.IsCancellationRequested)
                                 {
-                                    if (AppState.CancellationTokenSource.IsCancellationRequested)
-                                        return;
-
-                                    innerClient = Storage.CreateClient(AppState);
-                        
-                                    if (innerClient is null || AppState.CancellationTokenSource.IsCancellationRequested)
-                                    {
-                                        AppState.Exceptions.Add("Could not establish Client when copying online file group");
-                                        AppState.CancellationTokenSource.Cancel();
-                                        return;
-                                    }
-
-                                    innerFileStore = innerClient.GetFileStore(AppState);
-
-                                    if (innerFileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
-                                    {
-                                        AppState.Exceptions.Add("Could not establish FileStore when copying online file group");
-                                        AppState.CancellationTokenSource.Cancel();
-                                        return;
-                                    }
-                            
-                                    foreach (var fo in group)
-                                    {
-                                        var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == fo.RelativeComparablePath && f.IsDeleted == false);
-
-                                        if (serverFile is not null && (AppState.Settings.CompareFileDates == false || serverFile.LastWriteTime == fo.LastWriteTime) && (AppState.Settings.CompareFileSizes == false || serverFile.FileSizeBytes == fo.FileSizeBytes))
-                                            continue;
-
-                                        spinner.Text = $"{spinnerText} {fo.FileNameOrPathSegment}...";
-                                        innerClient.CopyFile(innerFileStore, AppState, fo);
-                                        filesCopied++;
-                                    }
+                                    AppState.Exceptions.Add("Could not establish Client when copying online file group");
+                                    AppState.CancellationTokenSource.Cancel();
+                                    return;
                                 }
-                                finally
+
+                                innerFileStore = innerClient.GetFileStore(AppState);
+
+                                if (innerFileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
                                 {
-                                    semaphore.Release();
-                                    Storage.DisconnectFileStore(innerFileStore);
-                                    Storage.DisconnectClient(innerClient);
+                                    AppState.Exceptions.Add("Could not establish FileStore when copying online file group");
+                                    AppState.CancellationTokenSource.Cancel();
+                                    return;
                                 }
-                            }));
-                        }
+                        
+                                foreach (var fo in group)
+                                {
+                                    var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == fo.RelativeComparablePath && f.IsDeleted == false);
 
-                        await Task.WhenAll(tasks);
+                                    if (serverFile is not null && (AppState.Settings.CompareFileDates == false || serverFile.LastWriteTime == fo.LastWriteTime) && (AppState.Settings.CompareFileSizes == false || serverFile.FileSizeBytes == fo.FileSizeBytes))
+                                        continue;
+
+                                    spinner.Text = $"{spinnerText} {fo.FileNameOrPathSegment}...";
+                                    innerClient.CopyFile(innerFileStore, AppState, fo);
+                                    filesCopied++;
+                                }
+                            }
+                            finally
+                            {
+                                semaphore.Release();
+                                Storage.DisconnectFileStore(innerFileStore);
+                                Storage.DisconnectClient(innerClient);
+                            }
+                        }));
                     }
-                    finally
-                    {
-                        Storage.DisconnectFileStore(fileStore);
-                    }                    
+
+                    await Task.WhenAll(tasks);
                     
                     if (AppState.CancellationTokenSource.IsCancellationRequested)
                     {
@@ -853,47 +869,20 @@ public sealed class AppRunner
 
             #endregion
 
-            #region Deploy Offline Files
+            #region Deploy Files While Offline
 
             Timer.Restart();
             
             var filesToCopy = AppState.LocalFiles.Where(f => f is { IsFile: true, IsOnlineCopy: false }).OrderBy(f => f.RelativeComparablePath).ToList();
             var fileCount = filesToCopy.Count;
 
-            await Spinner.StartAsync("Deploy files and folders...", async spinner =>
+            await Spinner.StartAsync("Deploy files (server offline)...", async spinner =>
             {
                 AppState.CurrentSpinner = spinner;
 
-                var foldersToCreate = new List<string>();
                 var spinnerText = spinner.Text;
                 var filesCopied = 0;
 
-                foreach (var folder in AppState.LocalFiles.Where(f => f is { IsFolder: true, IsOnlineCopy: false }).ToList())
-                {
-                    if (AppState.ServerFiles.Any(f => f.IsFolder && f.RelativeComparablePath == folder.RelativeComparablePath) == false)
-                        foldersToCreate.Add($"{AppState.Settings.ServerConnection.RemoteRootPath}\\{folder.RelativeComparablePath.SetSmbPathSeparators().TrimPath()}");
-                }
-
-                var fileStore = client.GetFileStore(AppState);
-
-                if (fileStore is null || AppState.CancellationTokenSource.IsCancellationRequested)
-                    return;
-
-                foreach (var folder in foldersToCreate.OrderBy(f => f))
-                {
-                    client.EnsureServerPathExists(fileStore, AppState, folder);
-                }
-
-                spinner.Text = spinnerText;
-
-                Storage.DisconnectFileStore(fileStore);
-                
-                if (AppState.CancellationTokenSource.IsCancellationRequested)
-                {
-                    spinner.Fail($"{spinnerText} Failed!");
-                    return;
-                }
-                
                 if (fileCount > 0)
                 {
                     const int groupSize = 10;
