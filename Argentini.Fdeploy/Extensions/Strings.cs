@@ -956,11 +956,14 @@ public static class Strings
 
     public static string GetLastPathSegment(this string filePath)
     {
+        if (filePath.IndexOf('\\') < 0 && filePath.IndexOf('/') < 0)
+            return filePath;
+        
         if (filePath.IndexOf('\\') > -1)
-            return filePath[filePath.LastIndexOf('\\')..].TrimStart('\\');
+            return filePath.NormalizeSmbPath()[filePath.LastIndexOf('\\')..].TrimStart('\\');
 
         if (filePath.IndexOf('/') > -1)
-            return filePath[filePath.LastIndexOf('/')..].TrimStart('/');
+            return filePath.NormalizePath()[filePath.LastIndexOf('/')..].TrimStart('/');
 
         return filePath;
     }
