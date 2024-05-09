@@ -177,6 +177,9 @@ public sealed class AppRunner
         AppState.Settings.Paths.OnlineCopyFilePaths.NormalizePaths();
         AppState.Settings.Paths.OnlineCopyFolderPaths.NormalizePaths();
 
+        AppState.Settings.Paths.AlwaysOverwritePaths.NormalizePaths();
+        AppState.Settings.Paths.AlwaysOverwritePathsWithRecurse.NormalizePaths();
+
         AppState.Settings.Paths.IgnoreFilePaths.NormalizePaths();
         AppState.Settings.Paths.IgnoreFolderPaths.NormalizePaths();
 
@@ -771,7 +774,7 @@ public sealed class AppRunner
                                 {
                                     var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == fo.RelativeComparablePath && f.IsDeleted == false);
 
-                                    if (serverFile is not null && (AppState.Settings.CompareFileDates == false || serverFile.LastWriteTime == fo.LastWriteTime) && (AppState.Settings.CompareFileSizes == false || serverFile.FileSizeBytes == fo.FileSizeBytes))
+                                    if (fo.AlwaysOverwrite == false && serverFile is not null && (AppState.Settings.CompareFileDates == false || serverFile.LastWriteTime == fo.LastWriteTime) && (AppState.Settings.CompareFileSizes == false || serverFile.FileSizeBytes == fo.FileSizeBytes))
                                         continue;
 
                                     spinner.Text = $"{spinnerText} {fo.FileNameOrPathSegment}...";
@@ -933,7 +936,7 @@ public sealed class AppRunner
                                 {
                                     var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == fo.RelativeComparablePath && f.IsDeleted == false);
 
-                                    if (serverFile is not null && (AppState.Settings.CompareFileDates == false || serverFile.LastWriteTime == fo.LastWriteTime) && (AppState.Settings.CompareFileSizes == false || serverFile.FileSizeBytes == fo.FileSizeBytes))
+                                    if (fo.AlwaysOverwrite == false && serverFile is not null && (AppState.Settings.CompareFileDates == false || serverFile.LastWriteTime == fo.LastWriteTime) && (AppState.Settings.CompareFileSizes == false || serverFile.FileSizeBytes == fo.FileSizeBytes))
                                         continue;
                                
                                     innerClient.CopyFile(innerFileStore, AppState, fo);

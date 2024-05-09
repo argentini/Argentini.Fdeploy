@@ -82,6 +82,18 @@ Paths:
     OnlineCopyFilePaths:
         - "backup/backup.sqlite.db"
 
+    # Files in these paths will always be overwritten even if timestamps and size match;
+    # does not recurse;
+    # use a tilde character by itself to match the website root
+    AlwaysOverwritePaths:
+        - "~"
+
+    # Files in these paths will always be overwritten even if timestamps and size match;
+    # recurses subdirectories;
+    # use a tilde character by itself to match the website root
+    AlwaysOverwritePathsWithRecurse:
+        - "umbraco/Data"
+
     # Ignore the following relative file paths;
     # applies to safe copies, orphan deletion, and the primary file deployment
     IgnoreFilePaths:
