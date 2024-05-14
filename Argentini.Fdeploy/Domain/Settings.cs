@@ -12,7 +12,10 @@ public sealed class Settings
     public int WriteRetryDelaySeconds { get; set; } = 10;
     public int RetryCount { get; set; } = 10;
     public int MaxThreadCount { get; set; } = Environment.ProcessorCount;
-    
+
+    public bool CleanProject { get; set; } = true;
+    public bool PurgeProject { get; set; } = true;
+
     public ServerConnectionSettings ServerConnection { get; set; } = new();
     public ProjectSettings Project { get; set; } = new();
     public PathsSettings Paths { get; set; } = new();

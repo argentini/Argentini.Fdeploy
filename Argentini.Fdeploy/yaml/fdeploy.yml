@@ -31,6 +31,12 @@ CompareFileDates: true
 # When deploying changed files only update files with different file sizes; default is true
 CompareFileSizes: true
 
+# Before publishing the project execute a dotnet clean
+CleanProject: true
+
+# Before publishing the project, delete and recreate the bin and obj folders
+PurgeProject: true
+
 Project:
 
     # Project file (.csproj) path and filename, relative to the location of this file

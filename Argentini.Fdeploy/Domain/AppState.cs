@@ -9,6 +9,8 @@ public sealed class AppState
     public string YamlCredsFilePath { get; set; } = string.Empty;
     public string ProjectPath { get; set; } = string.Empty;
     public string PublishPath { get; set; } = string.Empty;
+    public string ProjectBinPath { get; set; } = string.Empty;
+    public string ProjectObjPath { get; set; } = string.Empty;
     public string TrimmablePublishPath { get; set; } = string.Empty;
 
     public Settings Settings { get; set; } = new();

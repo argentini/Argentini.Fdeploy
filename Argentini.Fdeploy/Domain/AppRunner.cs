@@ -166,6 +166,8 @@ public sealed class AppRunner
         #region Normalize Paths
 
         AppState.PublishPath = $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}publish";
+        AppState.ProjectBinPath = $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}bin";
+        AppState.ProjectObjPath = $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}obj";
         AppState.TrimmablePublishPath = AppState.PublishPath.TrimPath();
 
         AppState.Settings.Project.ProjectFilePath = AppState.Settings.Project.ProjectFilePath.NormalizePath();
@@ -402,8 +404,9 @@ public sealed class AppRunner
         await Console.Out.WriteLineAsync();
 
         SMB2Client? client = null;
+        var sb = new StringBuilder();
         
-        #region Local Cleanup
+        #region Delete Publish Folder
 
         if (Directory.Exists(AppState.PublishPath))
         {
@@ -426,15 +429,152 @@ public sealed class AppRunner
                     }
                     catch
                     {
+                        spinner.Text = $"{spinnerText} Retry {x + 1}";
                         await Task.Delay(AppState.Settings.WriteRetryDelaySeconds * 1000);
                     }
                 }
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
+                {
                     spinner.Fail($"{spinnerText} Failed!");
-                else
-                    spinner.Text = $"{spinnerText} Success!";
+                    return;
+                }
 
+                spinner.Text = $"{spinnerText} Success!";
+                
+                await Task.CompletedTask;
+
+            }, Patterns.Dots, Patterns.Line);
+        }
+
+        #endregion
+
+        #region Clean Project
+
+        if (AppState.Settings.CleanProject)
+        {
+            await Spinner.StartAsync($"Clean project {AppState.Settings.Project.ProjectFileName}...", async spinner =>
+            {
+                try
+                {
+                    var spinnerText = spinner.Text;
+
+                    Timer.Restart();
+
+                    var cmd = Cli.Wrap("dotnet")
+                        .WithArguments(new [] { "clean", $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{AppState.Settings.Project.ProjectFilePath}" })
+                        .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
+                        .WithStandardErrorPipe(PipeTarget.Null);
+                    
+                    var result = await cmd.ExecuteAsync();
+
+                    if (result.IsSuccess == false)
+                    {
+                        spinner.Fail($"{spinnerText} Failed!");
+                        AppState.Exceptions.Add($"Could not clean the project; exit code: {result.ExitCode}");
+                        await AppState.CancellationTokenSource.CancelAsync();
+                        return;
+                    }
+                    
+                    spinner.Text = $"Clean project ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                }
+
+                catch (Exception e)
+                {
+                    spinner.Fail($"Cleaning project {AppState.Settings.Project.ProjectFileName}... Failed!");
+                    AppState.Exceptions.Add($"Could not clean the project; {e.Message}");
+                    await AppState.CancellationTokenSource.CancelAsync();
+                }
+                
+            }, Patterns.Dots, Patterns.Line);
+
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                return;
+        }
+
+        #endregion
+
+        #region Purge Bin Folder
+
+        if (AppState.Settings.PurgeProject && Directory.Exists(AppState.ProjectBinPath))
+        {
+            await Spinner.StartAsync("Purge bin folder...", async spinner =>
+            {
+                AppState.CurrentSpinner = spinner;
+
+                var spinnerText = spinner.Text;
+                var retries = AppState.Settings.RetryCount;
+
+                if (retries < 0)
+                    retries = new Settings().RetryCount;
+
+                for (var x = 0; x < retries; x++)
+                {
+                    try
+                    {
+                        Directory.Delete(AppState.ProjectBinPath, true);
+                        Directory.CreateDirectory(AppState.ProjectBinPath);
+                        break;
+                    }
+                    catch
+                    {
+                        spinner.Text = $"{spinnerText} Retry {x + 1}";
+                        await Task.Delay(AppState.Settings.WriteRetryDelaySeconds * 1000);
+                    }
+                }
+
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                {
+                    spinner.Fail($"{spinnerText} Failed!");
+                    return;
+                }
+
+                spinner.Text = $"{spinnerText} Success!";
+                
+                await Task.CompletedTask;
+
+            }, Patterns.Dots, Patterns.Line);
+        }
+
+        #endregion
+
+        #region Purge Obj Folder
+
+        if (AppState.Settings.PurgeProject && Directory.Exists(AppState.ProjectObjPath))
+        {
+            await Spinner.StartAsync("Purge obj folder...", async spinner =>
+            {
+                AppState.CurrentSpinner = spinner;
+
+                var spinnerText = spinner.Text;
+                var retries = AppState.Settings.RetryCount;
+
+                if (retries < 0)
+                    retries = new Settings().RetryCount;
+
+                for (var x = 0; x < retries; x++)
+                {
+                    try
+                    {
+                        Directory.Delete(AppState.ProjectObjPath, true);
+                        Directory.CreateDirectory(AppState.ProjectObjPath);
+                        break;
+                    }
+                    catch
+                    {
+                        spinner.Text = $"{spinnerText} Retry {x + 1}";
+                        await Task.Delay(AppState.Settings.WriteRetryDelaySeconds * 1000);
+                    }
+                }
+
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                {
+                    spinner.Fail($"{spinnerText} Failed!");
+                    return;
+                }
+
+                spinner.Text = $"{spinnerText} Success!";
+                
                 await Task.CompletedTask;
 
             }, Patterns.Dots, Patterns.Line);
@@ -443,9 +583,7 @@ public sealed class AppRunner
         #endregion
         
         #region Publish Project
-
-        var sb = new StringBuilder();
-
+        
         await Spinner.StartAsync($"Publishing project {AppState.Settings.Project.ProjectFileName}...", async spinner =>
         {
             try
@@ -453,7 +591,7 @@ public sealed class AppRunner
                 var spinnerText = spinner.Text;
 
                 Timer.Restart();
-                
+
                 var cmd = Cli.Wrap("dotnet")
                     .WithArguments(new [] { "publish", "--framework", $"net{AppState.Settings.Project.TargetFramework:N1}", $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{AppState.Settings.Project.ProjectFilePath}", "-c", AppState.Settings.Project.BuildConfiguration, "-o", AppState.PublishPath, $"/p:EnvironmentName={AppState.Settings.Project.EnvironmentName}" })
                     .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
