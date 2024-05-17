@@ -185,7 +185,7 @@ namespace Argentini.Fdeploy.ConsoleBusy
 
         public void Succeed(string? text = null)
         {
-            Stop(text, ConsoleHelper.ShouldFallback ? SymbolSucceed.Fallback : SymbolSucceed.Default, ConsoleColor.Green);
+            Stop(text, ConsoleHelper.ShouldFallback ? SymbolSucceed.Fallback : SymbolSucceed.Default, ConsoleColor.DarkGreen);
         }
 
         public void Fail(string? text = null)
@@ -195,7 +195,7 @@ namespace Argentini.Fdeploy.ConsoleBusy
 
         public void Warn(string? text = null)
         {
-            Stop(text, ConsoleHelper.ShouldFallback ? SymbolWarn.Fallback : SymbolWarn.Default, ConsoleColor.Yellow);
+            Stop(text, ConsoleHelper.ShouldFallback ? SymbolWarn.Fallback : SymbolWarn.Default, ConsoleColor.DarkYellow);
         }
 
         public void Info(string? text = null)
