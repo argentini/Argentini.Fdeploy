@@ -771,7 +771,16 @@ public static class Storage
                 };
                 
                 status = fileStore.SetFileInformation(handle, fileDispositionInformation);
-                success = status == NTStatus.STATUS_SUCCESS;
+
+                if (status == NTStatus.STATUS_SUCCESS)
+                {
+                    var fileExists = client.ServerFileExists(fileStore, appState, sfo.AbsolutePath);
+
+                    if (fileExists == false)
+                        success = true;
+                    else
+                        success = false;
+                }
             }
             else
             {
@@ -1178,18 +1187,22 @@ public static class Storage
         if (client is null || client.IsConnected == false || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
-        var serverFilePath = $"{appState.Settings.ServerConnection.RemoteRootPath}\\app_offline.htm";
+        var sfo = new ServerFileObject(appState, $"{appState.Settings.ServerConnection.RemoteRootPath}\\app_offline.htm".FormatServerPath(appState), DateTimeOffset.UtcNow.ToUnixTimeSeconds(), DateTimeOffset.UtcNow.ToUnixTimeSeconds(), appState.AppOfflineMarkup.Length, true, appState.Settings.ServerConnection.RemoteRootPath);
         
+        client.DeleteServerFile(fileStore, appState, sfo);
+
+        if (appState.CancellationTokenSource.IsCancellationRequested)
+            return;
+
         try
         {
             var success = true;
             var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
-            var fileExists = client.ServerFileExists(fileStore, appState, serverFilePath);
             var spinnerText = appState.CurrentSpinner?.Text ?? string.Empty;
             
             for (var attempt = 0; attempt < retries; attempt++)
             {
-                var status = fileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, fileExists ? CreateDisposition.FILE_OVERWRITE : CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+                var status = fileStore.CreateFile(out var handle, out _, sfo.AbsolutePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
                     
                 if (status == NTStatus.STATUS_SUCCESS)
                 {
@@ -1224,12 +1237,12 @@ public static class Storage
             if (success)
                 return;
             
-            appState.Exceptions.Add($"Failed to create offline file {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{serverFilePath}`");
+            appState.Exceptions.Add($"Failed to create offline file {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{sfo.RelativeComparablePath}`");
             appState.CancellationTokenSource.Cancel();
         }
         catch
         {
-            appState.Exceptions.Add($"Failed to create offline file `{serverFilePath}`");
+            appState.Exceptions.Add($"Failed to create offline file `{sfo.RelativeComparablePath}`");
             appState.CancellationTokenSource.Cancel();
         }
     }
@@ -1256,58 +1269,9 @@ public static class Storage
         if (client is null || client.IsConnected == false || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
-        var serverFilePath = $"{appState.Settings.ServerConnection.RemoteRootPath}/app_offline.htm".FormatServerPath(appState);
-        var success = true;
-        var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
+        var sfo = new ServerFileObject(appState, $"{appState.Settings.ServerConnection.RemoteRootPath}\\app_offline.htm".FormatServerPath(appState), DateTimeOffset.UtcNow.ToUnixTimeSeconds(), DateTimeOffset.UtcNow.ToUnixTimeSeconds(), appState.AppOfflineMarkup.Length, true, appState.Settings.ServerConnection.RemoteRootPath);
         
-        for (var attempt = 0; attempt < retries; attempt++)
-        {
-            var status = fileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
-
-            if (status == NTStatus.STATUS_SUCCESS)
-            {
-                var fileDispositionInformation = new FileDispositionInformation
-                {
-                    DeletePending = true
-                };
-                
-                status = fileStore.SetFileInformation(handle, fileDispositionInformation);
-                success = status == NTStatus.STATUS_SUCCESS;
-            }
-            else
-            {
-                var fileExists = client.ServerFileExists(fileStore, appState, serverFilePath);
-        
-                if (fileExists == false)
-                    success = true;
-                else        
-                    success = false;
-            }
-
-            if (handle is not null)
-                fileStore.CloseFile(handle);
-
-            if (success)
-                break;
-
-            if (appState.CurrentSpinner is not null)
-            {
-                var text = appState.CurrentSpinner.Text;
-
-                if (text.Contains("... Retry", StringComparison.Ordinal))
-                    text = appState.CurrentSpinner.Text[..text.IndexOf("... Retry", StringComparison.Ordinal)] + "...";
-
-                appState.CurrentSpinner.Text = $"{text} Retry {attempt + 1} ({serverFilePath.GetLastPathSegment()})...";
-            }
-
-            Thread.Sleep(appState.Settings.WriteRetryDelaySeconds * 1000);
-        }
-
-        if (success)
-            return;
-        
-        appState.Exceptions.Add($"Failed to delete offline file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{serverFilePath}`");
-        appState.CancellationTokenSource.Cancel();
+        client.DeleteServerFile(fileStore, appState, sfo);
     }
     
     #endregion

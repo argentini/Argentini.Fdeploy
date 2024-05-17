@@ -95,7 +95,7 @@ public sealed class AppRunner
 
         //AppState.YamlProjectFilePath = Path.Combine("c:\\code\\Fynydd-Website-2024\\UmbracoCms", "fdeploy-staging.yml");
         AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Fynydd-Website-2024/UmbracoCms", "fdeploy-staging.yml");
-        //AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/PentecHealthWebsite/Tolnedra", "fdeploy-prod.yml");
+        //AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Tolnedra2/UmbracoCms", "fdeploy-prod.yml");
         
         #endif
 
