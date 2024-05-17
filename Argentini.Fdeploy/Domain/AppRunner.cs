@@ -1167,12 +1167,12 @@ public sealed class AppRunner
                         {
                             if (item.IsFile)
                             {
-                                client.DeleteServerFile(fileStore, AppState, item);
+                                client.DeleteServerFile(fileStore, AppState, item, true);
                                 filesRemoved++;
                             }
                             else
                             {
-                                client.DeleteServerFolderRecursive(fileStore, AppState, item);
+                                client.DeleteServerFolderRecursive(fileStore, AppState, item, true);
                                 foldersRemoved++;
                             }
 

@@ -734,8 +734,11 @@ public static class Storage
         }
     }
     
-    public static void DeleteServerFile(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, FileObject sfo)
+    public static void DeleteServerFile(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, FileObject sfo, bool showOutput = false)
     {
+        if (sfo.IsDeleted)
+            return;
+
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
@@ -756,6 +759,16 @@ public static class Storage
         if (client is null || client.IsConnected == false || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
+        if (showOutput && appState.CurrentSpinner is not null)
+        {
+            var text = appState.CurrentSpinner.Text;
+
+            if (text.Contains("... ", StringComparison.Ordinal))
+                text = appState.CurrentSpinner.Text[..text.IndexOf("... ", StringComparison.Ordinal)] + "...";
+                
+            appState.CurrentSpinner.Text = $"{text} {sfo.RelativeComparablePath}...";
+        }
+        
         var success = true;
         var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
         
@@ -822,8 +835,11 @@ public static class Storage
         }
     }
 
-    public static void DeleteServerFolder(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, FileObject sfo)
+    public static void DeleteServerFolder(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, FileObject sfo, bool showOutput = false)
     {
+        if (sfo.IsDeleted)
+            return;
+        
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
@@ -844,6 +860,16 @@ public static class Storage
         if (client is null || client.IsConnected == false || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
+        if (showOutput && appState.CurrentSpinner is not null)
+        {
+            var text = appState.CurrentSpinner.Text;
+
+            if (text.Contains("... ", StringComparison.Ordinal))
+                text = appState.CurrentSpinner.Text[..text.IndexOf("... ", StringComparison.Ordinal)] + "...";
+                
+            appState.CurrentSpinner.Text = $"{text} {sfo.RelativeComparablePath}...";
+        }
+        
         var success = true;
         var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
         
@@ -898,10 +924,15 @@ public static class Storage
         else
         {
             sfo.IsDeleted = true;
+
+            foreach (var item in appState.ServerFiles.Where(i => i.IsFolder && i.RelativeComparablePath.StartsWith(sfo.RelativeComparablePath + '/')))
+            {
+                item.IsDeleted = true;
+            }
         }
     }
 
-    public static void DeleteServerFolderRecursive(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, FileObject sfo)
+    public static void DeleteServerFolderRecursive(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, FileObject sfo, bool showOutput = false)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -935,7 +966,7 @@ public static class Storage
 
         foreach (var file in appState.ServerFiles.ToList().Where(f => f is { IsFile: true, IsDeleted: false } && f.AbsolutePath.StartsWith(sfo.AbsolutePath)))
         {
-            client.DeleteServerFile(fileStore, appState, file);
+            client.DeleteServerFile(fileStore, appState, file, showOutput);
         }
 
         if (appState.CancellationTokenSource.IsCancellationRequested)
@@ -945,7 +976,7 @@ public static class Storage
 
         foreach (var folder in appState.ServerFiles.ToList().Where(f => f is { IsFolder: true, IsDeleted: false } && f.AbsolutePath.StartsWith(sfo.AbsolutePath)).OrderByDescending(o => o.Level))
         {
-            client.DeleteServerFolder(fileStore, appState, folder);
+            client.DeleteServerFolder(fileStore, appState, folder, showOutput);
         }
     }
     
@@ -1021,11 +1052,8 @@ public static class Storage
                 var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
                 var sfo = appState.ServerFiles.FirstOrDefault(f => f.AbsolutePath.TrimPath() == serverFilePath.TrimPath());
 
-                if (sfo is not null)
-                {
+                if (sfo is not null && sfo.IsDeleted == false)
                     client.DeleteServerFile(fileStore, appState, sfo);
-                    sfo.IsDeleted = false;
-                }
 
                 for (var attempt = 0; attempt < retries; attempt++)
                 {
@@ -1068,17 +1096,17 @@ public static class Storage
 
                         if (handle is not null)
                             fileStore.CloseFile(handle);
+                    }
+                    
+                    if (success)
+                        break;
 
-                        if (success)
-                            break;
+                    for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
+                    {
+                        if (appState.CurrentSpinner is not null)
+                            appState.CurrentSpinner.Text = $"{spinnerText} Retry {attempt + 1} ({x:N0})...";
 
-                        for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
-                        {
-                            if (appState.CurrentSpinner is not null)
-                                appState.CurrentSpinner.Text = $"{spinnerText} Retry {attempt + 1} ({x:N0})...";
-
-                            Thread.Sleep(1000);
-                        }
+                        Thread.Sleep(1000);
                     }
                 }
 
@@ -1088,7 +1116,10 @@ public static class Storage
                     appState.CancellationTokenSource.Cancel();
                     return;
                 }
-                
+
+                if (sfo is not null)
+                    sfo.IsDeleted = false;
+
                 client.ChangeFileDates(fileStore, appState, serverFilePath, createTime, lastWriteTime);
             }
             catch
