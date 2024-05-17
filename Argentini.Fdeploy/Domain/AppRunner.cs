@@ -95,6 +95,7 @@ public sealed class AppRunner
 
         //AppState.YamlProjectFilePath = Path.Combine("c:\\code\\Fynydd-Website-2024\\UmbracoCms", "fdeploy-staging.yml");
         AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Fynydd-Website-2024/UmbracoCms", "fdeploy-staging.yml");
+        //AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/PentecHealthWebsite/Tolnedra", "fdeploy-prod.yml");
         
         #endif
 
@@ -912,7 +913,7 @@ public sealed class AppRunner
                                 {
                                     var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == fo.RelativeComparablePath && f.IsDeleted == false);
 
-                                    if (fo.AlwaysOverwrite == false && serverFile is not null && (AppState.Settings.CompareFileDates == false || serverFile.LastWriteTime == fo.LastWriteTime) && (AppState.Settings.CompareFileSizes == false || serverFile.FileSizeBytes == fo.FileSizeBytes))
+                                    if (fo.AlwaysOverwrite == false && serverFile is not null && (AppState.Settings.CompareFileDates == false || (serverFile.CreateTime == fo.CreateTime && serverFile.LastWriteTime == fo.LastWriteTime)) && (AppState.Settings.CompareFileSizes == false || serverFile.FileSizeBytes == fo.FileSizeBytes))
                                         continue;
 
                                     spinner.Text = $"{spinnerText} {fo.FileNameOrPathSegment}...";
@@ -1074,7 +1075,7 @@ public sealed class AppRunner
                                 {
                                     var serverFile = AppState.ServerFiles.FirstOrDefault(f => f.RelativeComparablePath == fo.RelativeComparablePath && f.IsDeleted == false);
 
-                                    if (fo.AlwaysOverwrite == false && serverFile is not null && (AppState.Settings.CompareFileDates == false || serverFile.LastWriteTime == fo.LastWriteTime) && (AppState.Settings.CompareFileSizes == false || serverFile.FileSizeBytes == fo.FileSizeBytes))
+                                    if (fo.AlwaysOverwrite == false && serverFile is not null && (AppState.Settings.CompareFileDates == false || (serverFile.CreateTime == fo.CreateTime && serverFile.LastWriteTime == fo.LastWriteTime)) && (AppState.Settings.CompareFileSizes == false || serverFile.FileSizeBytes == fo.FileSizeBytes))
                                         continue;
                                
                                     innerClient.CopyFile(innerFileStore, AppState, fo);

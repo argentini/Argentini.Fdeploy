@@ -18,7 +18,7 @@ public static class Storage
             if ((directory.Attributes & System.IO.FileAttributes.Hidden) == System.IO.FileAttributes.Hidden)
                 continue;
             
-            var fo = new LocalFileObject(appState, subdir, directory.LastWriteTime.ToFileTimeUtc(), 0, false, appState.PublishPath);
+            var fo = new LocalFileObject(appState, subdir, directory.CreationTime.ToFileTimeUtc(), directory.LastWriteTime.ToFileTimeUtc(), 0, false, appState.PublishPath);
             
             if (FolderPathShouldBeIgnoredDuringScan(appState, fo))
                 continue;
@@ -40,7 +40,7 @@ public static class Storage
                 if ((file.Attributes & System.IO.FileAttributes.Hidden) == System.IO.FileAttributes.Hidden)
                     continue;
 
-                var fo = new LocalFileObject(appState, filePath, file.LastWriteTime.ToFileTimeUtc(), file.Length, true, appState.PublishPath);
+                var fo = new LocalFileObject(appState, filePath, file.CreationTime.ToFileTimeUtc(), file.LastWriteTime.ToFileTimeUtc(), file.Length, true, appState.PublishPath);
             
                 if (FilePathShouldBeIgnoredDuringScan(appState, fo))
                     continue;
@@ -518,7 +518,7 @@ public static class Storage
 
                         var filePath = $"{path}\\{file.FileName}";
 
-                        var fo = new ServerFileObject(appState, filePath.Trim('\\'), file.LastWriteTime.ToFileTimeUtc(), file.EndOfFile, true, appState.Settings.ServerConnection.RemoteRootPath);
+                        var fo = new ServerFileObject(appState, filePath.Trim('\\'), file.CreationTime.ToFileTimeUtc(), file.LastWriteTime.ToFileTimeUtc(), file.EndOfFile, true, appState.Settings.ServerConnection.RemoteRootPath);
 
                         if (FilePathShouldBeIgnoredDuringScan(appState, fo))
                             return;
@@ -555,7 +555,7 @@ public static class Storage
                             return;
 
                         var directoryPath = $"{path}\\{directory.FileName}";
-                        var fo = new ServerFileObject(appState, directoryPath.Trim('\\'), directory.LastWriteTime.ToFileTimeUtc(), 0, false, appState.Settings.ServerConnection.RemoteRootPath);
+                        var fo = new ServerFileObject(appState, directoryPath.Trim('\\'), directory.CreationTime.ToFileTimeUtc(), directory.LastWriteTime.ToFileTimeUtc(), 0, false, appState.Settings.ServerConnection.RemoteRootPath);
 
                         if (FolderPathShouldBeIgnoredDuringScan(appState, fo))
                             return;
@@ -942,10 +942,10 @@ public static class Storage
     
     public static void CopyFile(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, LocalFileObject fo)
     {
-        client.CopyFile(fileStore, appState, fo.AbsolutePath, fo.AbsoluteServerPath, fo.LastWriteTime);
+        client.CopyFile(fileStore, appState, fo.AbsolutePath, fo.AbsoluteServerPath, fo.CreateTime, fo.LastWriteTime);
     }
 
-    public static void CopyFile(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, string localFilePath, string serverFilePath, long fileTime = -1, long fileSizeBytes = -1)
+    public static void CopyFile(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, string localFilePath, string serverFilePath, long createTime = -1, long lastWriteTime = -1, long fileSizeBytes = -1)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -999,24 +999,30 @@ public static class Storage
 
             try
             {
-                if (fileTime < 0 || fileSizeBytes < 0)
+                if (createTime < 0 || lastWriteTime < 0 || fileSizeBytes < 0)
                 {
                     var fileInfo = new FileInfo(localFilePath);
                     
-                    fileTime = fileInfo.LastWriteTime.ToFileTimeUtc();
+                    createTime = fileInfo.CreationTime.ToFileTimeUtc();
+                    lastWriteTime = fileInfo.LastWriteTime.ToFileTimeUtc();
                     fileSizeBytes = fileInfo.Length;
                 }
 
                 var success = true;
                 var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
+                var sfo = appState.ServerFiles.FirstOrDefault(f => f.AbsolutePath.TrimPath() == serverFilePath.TrimPath());
 
-                using (var localFileStream = new FileStream(localFilePath, FileMode.Open, FileAccess.Read))
+                if (sfo is not null)
                 {
-                    var fileExists = client.ServerFileExists(fileStore, appState, serverFilePath);
-                    
-                    for (var attempt = 0; attempt < retries; attempt++)
+                    client.DeleteServerFile(fileStore, appState, sfo);
+                    sfo.IsDeleted = false;
+                }
+
+                for (var attempt = 0; attempt < retries; attempt++)
+                {
+                    using (var localFileStream = new FileStream(localFilePath, FileMode.Open, FileAccess.Read))
                     {
-                        var status = fileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, fileExists ? CreateDisposition.FILE_OVERWRITE : CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+                        var status = fileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_CREATE, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
                             
                         if (status == NTStatus.STATUS_SUCCESS)
                         {
@@ -1074,7 +1080,7 @@ public static class Storage
                     return;
                 }
                 
-                client.ChangeModifyDate(fileStore, appState, serverFilePath, fileTime);
+                client.ChangeFileDates(fileStore, appState, serverFilePath, createTime, lastWriteTime);
             }
             catch
             {
@@ -1089,12 +1095,12 @@ public static class Storage
         }
     }
     
-    public static void ChangeModifyDate(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, LocalFileObject fo)
+    public static void ChangeFileDates(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, LocalFileObject fo)
     {
-        client.ChangeModifyDate(fileStore, appState, fo.AbsoluteServerPath, fo.LastWriteTime);
+        client.ChangeFileDates(fileStore, appState, fo.AbsoluteServerPath, fo.CreateTime, fo.LastWriteTime);
     }    
 
-    public static void ChangeModifyDate(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, string serverFilePath, long fileTime)
+    public static void ChangeFileDates(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, string serverFilePath, long createTime, long lastWriteTime)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -1124,20 +1130,21 @@ public static class Storage
         {
             var basicInfo = new FileBasicInformation
             {
-                LastWriteTime = DateTime.FromFileTimeUtc(fileTime)
+                CreationTime = DateTime.FromFileTimeUtc(createTime),
+                LastWriteTime = DateTime.FromFileTimeUtc(lastWriteTime)
             };
 
             status = fileStore.SetFileInformation(handle, basicInfo);
 
             if (status != NTStatus.STATUS_SUCCESS)
             {
-                appState.Exceptions.Add($"Failed to set last write time for file `{serverFilePath}`");
+                appState.Exceptions.Add($"Failed to set file times for file `{serverFilePath}`");
                 appState.CancellationTokenSource.Cancel();
             }
         }
         else
         {
-            appState.Exceptions.Add($"Failed to prepare file for last write time set `{serverFilePath}`");
+            appState.Exceptions.Add($"Failed to prepare file time set `{serverFilePath}`");
             appState.CancellationTokenSource.Cancel();
         }
         

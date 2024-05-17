@@ -10,6 +10,7 @@ public abstract class FileObject
     public string FileNameOrPathSegment { get; protected set; } = string.Empty;
     public string RelativeComparablePath { get; protected set; } = string.Empty;
 
+    public long CreateTime { get; protected set; }
     public long LastWriteTime { get; protected set; }
     public long FileSizeBytes { get; protected set; }
     public bool IsFile { get; protected set; }

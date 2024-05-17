@@ -6,13 +6,14 @@ public sealed class LocalFileObject : FileObject
     public bool AlwaysOverwrite { get; }
     public string AbsoluteServerPath { get; }
 
-    public LocalFileObject(AppState appState, string absolutePath, long lastWriteTime, long fileSizeBytes, bool isFile, string rootPath)
+    public LocalFileObject(AppState appState, string absolutePath, long createTime, long lastWriteTime, long fileSizeBytes, bool isFile, string rootPath)
     {
         AbsolutePath = $"{absolutePath.FormatLocalPath(appState)}";
         FileNameOrPathSegment = AbsolutePath.GetLastPathSegment();
         ParentPath = AbsolutePath.TrimEnd(FileNameOrPathSegment)?.TrimEnd(Path.DirectorySeparatorChar) ?? string.Empty;
         RelativeComparablePath = AbsolutePath.TrimPath().TrimStart(rootPath.TrimPath()).TrimPath();
 
+        CreateTime = createTime;
         LastWriteTime = lastWriteTime;
         FileSizeBytes = fileSizeBytes;
         IsFile = isFile;
