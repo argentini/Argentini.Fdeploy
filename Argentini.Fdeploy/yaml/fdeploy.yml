@@ -16,8 +16,8 @@ ServerOfflineDelaySeconds: 0
 # Seconds to wait before bringing the server online; default is 0
 ServerOnlineDelaySeconds: 0
 
-# Seconds to wait after a failed write; default is 10
-WriteRetryDelaySeconds: 10
+# Seconds to wait after a failed write; default is 15
+WriteRetryDelaySeconds: 15
 
 # Number of attempts to write before giving up; default is 10
 RetryCount: 10

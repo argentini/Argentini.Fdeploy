@@ -9,7 +9,7 @@ public sealed class Settings
     
     public int ServerOfflineDelaySeconds { get; set; }
     public int ServerOnlineDelaySeconds { get; set; }
-    public int WriteRetryDelaySeconds { get; set; } = 10;
+    public int WriteRetryDelaySeconds { get; set; } = 15;
     public int RetryCount { get; set; } = 10;
     public int MaxThreadCount { get; set; } = Environment.ProcessorCount;
 
