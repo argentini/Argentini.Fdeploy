@@ -6,9 +6,9 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
 
-        <AssemblyVersion>1.2.5.0</AssemblyVersion>
-        <FileVersion>1.2.5.0</FileVersion>
-        <PackageVersion>1.2.5</PackageVersion>
+        <AssemblyVersion>1.2.6.0</AssemblyVersion>
+        <FileVersion>1.2.6.0</FileVersion>
+        <PackageVersion>1.2.6</PackageVersion>
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>fdeploy</ToolCommandName>
         <PackageOutputPath>./nupkg</PackageOutputPath>
@@ -27,7 +27,7 @@
         <PackageProjectUrl>https://github.com/argentini/Argentini.Fdeploy</PackageProjectUrl>
         <RepositoryUrl>https://github.com/argentini/Argentini.Deploy</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
-        <PackageReleaseNotes>Added settings for clean and purge project</PackageReleaseNotes>
+        <PackageReleaseNotes>File timestamp comparisons now include create time, file copies first delete destination</PackageReleaseNotes>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
         <PackageIcon>fdeploy-icon.png</PackageIcon>
