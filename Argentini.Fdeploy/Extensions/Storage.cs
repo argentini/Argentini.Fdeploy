@@ -24,8 +24,8 @@ public static class Storage
                 continue;
 
             if (appState.CurrentSpinner is not null)
-                appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.Text[..appState.CurrentSpinner.Text.IndexOf("...", StringComparison.Ordinal)]}... {fo.RelativeComparablePath}...";
-            
+                appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {fo.RelativeComparablePath}...";
+
             appState.LocalFiles.Add(fo);
 
             await RecurseLocalPathAsync(appState, subdir);
@@ -172,7 +172,7 @@ public static class Storage
             return true;
         }
 
-        return appState.Settings.Paths.IgnoreFilesNamed.Contains(fo.FileNameOrPathSegment);
+        return appState.Settings.Paths.IgnoreFilesNamed.Contains(fo.FileNameOrPathSegment) || fo.FileNameOrPathSegment == "app_offline.htm";
     }
     
     #endregion
@@ -187,7 +187,6 @@ public static class Storage
         var serverAvailable = false;
         var client = new SMB2Client();
         var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
-        var spinnerText = appState.CurrentSpinner?.Text ?? string.Empty;
         
         for (var attempt = 0; attempt < retries; attempt++)
         {
@@ -196,7 +195,7 @@ public static class Storage
                 try
                 {
                     if (suppressOutput == false && appState.CurrentSpinner is not null)
-                        appState.CurrentSpinner.Text = $"{spinnerText} Checking availability ({attempt + 1}/{retries})...";
+                        appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} Checking availability ({attempt + 1}/{retries})...";
 
                     var result = tcpClient.BeginConnect(appState.Settings.ServerConnection.ServerAddress, 445, null, null);
                 
@@ -216,19 +215,19 @@ public static class Storage
                 continue;
 
             if (suppressOutput == false && appState.CurrentSpinner is not null)
-                appState.CurrentSpinner.Text = $"{spinnerText} Server online...";
+                appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} Server online...";
 
             try
             {
                 if (suppressOutput == false && appState.CurrentSpinner is not null)
-                    appState.CurrentSpinner.Text = $"{spinnerText} Connecting ({attempt + 1}/{retries})...";
+                    appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} Connecting ({attempt + 1}/{retries})...";
 
                 var isConnected = client.Connect(appState.Settings.ServerConnection.ServerAddress, SMBTransportType.DirectTCPTransport, appState.Settings.ServerConnection.ResponseTimeoutMs);
 
                 if (isConnected)
                 {
                     if (suppressOutput == false && appState.CurrentSpinner is not null)
-                        appState.CurrentSpinner.Text = $"{spinnerText} Authenticating ({attempt + 1}/{retries})...";
+                        appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} Authenticating ({attempt + 1}/{retries})...";
                     
                     var status = client.Login(appState.Settings.ServerConnection.Domain, appState.Settings.ServerConnection.UserName, appState.Settings.ServerConnection.Password);
 
@@ -243,7 +242,7 @@ public static class Storage
                                 if (shares.Contains(appState.Settings.ServerConnection.ShareName, StringComparer.OrdinalIgnoreCase) == false)
                                 {
                                     if (suppressOutput == false && appState.CurrentSpinner is not null)
-                                        appState.CurrentSpinner.Text = $"{spinnerText} Network share unavailable... Failed!";
+                                        appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} Network share unavailable... Failed!";
 
                                     appState.Exceptions.Add("Network share not found on the server");
                                     appState.CancellationTokenSource.Cancel();
@@ -255,7 +254,7 @@ public static class Storage
                             else
                             {
                                 if (suppressOutput == false && appState.CurrentSpinner is not null)
-                                    appState.CurrentSpinner.Text = $"{spinnerText} Network shares unavailable... Failed!";
+                                    appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} Network shares unavailable... Failed!";
 
                                 appState.Exceptions.Add("Could not retrieve server shares list");
                                 appState.CancellationTokenSource.Cancel();
@@ -268,7 +267,7 @@ public static class Storage
                     else
                     {
                         if (suppressOutput == false && appState.CurrentSpinner is not null)
-                            appState.CurrentSpinner.Text = $"{spinnerText} Authentication failed!";
+                            appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} Authentication failed!";
                         
                         appState.Exceptions.Add("Server authentication failed");
                         appState.CancellationTokenSource.Cancel();
@@ -278,7 +277,7 @@ public static class Storage
                 else
                 {
                     if (suppressOutput == false && appState.CurrentSpinner is not null)
-                        appState.CurrentSpinner.Text = $"{spinnerText} Connection failed!";
+                        appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} Connection failed!";
 
                     appState.Exceptions.Add("Could not connect to the server");
                     appState.CancellationTokenSource.Cancel();
@@ -297,8 +296,8 @@ public static class Storage
 
         if (serverAvailable == false)
         {
-            if (suppressOutput == false)
-                appState.CurrentSpinner?.Fail($"{spinnerText} Could not connect to server... Failed!");
+            if (suppressOutput == false && appState.CurrentSpinner is not null)
+                appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} Could not connect to server... Failed!";
 
             appState.Exceptions.Add("Server is not responding");
             appState.CancellationTokenSource.Cancel();
@@ -306,8 +305,8 @@ public static class Storage
 
         else
         {
-            if (suppressOutput == false)
-                appState.CurrentSpinner?.Fail($"{spinnerText} Could not authenticate... Failed!");
+            if (suppressOutput == false && appState.CurrentSpinner is not null)
+                appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} Could not authenticate... Failed!";
         }
 
         appState.Exceptions.Add("Could not create SMB client");
@@ -434,6 +433,55 @@ public static class Storage
     #endregion
     
     #region Server Storage
+
+    public static ServerFileObject? GetServerFileInfo(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, string absoluteServerFilePath)
+    {
+        if (appState.CancellationTokenSource.IsCancellationRequested)
+            return null;
+
+        if (string.IsNullOrEmpty(absoluteServerFilePath))
+            return null;
+
+        object? fileHandle = null;
+        
+        try
+        {
+            if (client is null || fileStore is null || client.IsConnected == false || appState.CancellationTokenSource.IsCancellationRequested)
+                return null;
+
+            var status = fileStore.CreateFile(out fileHandle, out _, absoluteServerFilePath, AccessMask.GENERIC_READ, FileAttributes.Normal, ShareAccess.Read, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE, null);
+
+            if (status != NTStatus.STATUS_SUCCESS)
+                return null;
+            
+            status = fileStore.GetFileInformation(out var basicInfoFi, fileHandle, FileInformationClass.FileBasicInformation);
+                        
+            if (status == NTStatus.STATUS_SUCCESS)
+            {
+                var basicInfo = (FileBasicInformation)basicInfoFi;
+
+                status = fileStore.GetFileInformation(out var standardInfoFi, fileHandle, FileInformationClass.FileStandardInformation);
+                
+                if (status == NTStatus.STATUS_SUCCESS)
+                {
+                    var standardInfo = (FileStandardInformation)standardInfoFi;
+                    
+                    return new ServerFileObject(appState, absoluteServerFilePath, basicInfo.CreationTime.ToFileTimeUtc(), basicInfo.LastWriteTime.ToFileTimeUtc(), standardInfo.EndOfFile, true, appState.Settings.ServerConnection.RemoteRootPath);
+                }
+            }
+        }            
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            if (fileHandle is not null)
+                fileStore?.CloseFile(fileHandle);
+        }
+        
+        return null;
+    }
     
     public static async Task RecurseServerPathAsync(AppState appState, string path, bool includeHidden = false)
     {
@@ -521,7 +569,7 @@ public static class Storage
                         var fo = new ServerFileObject(appState, filePath.Trim('\\'), file.CreationTime.ToFileTimeUtc(), file.LastWriteTime.ToFileTimeUtc(), file.EndOfFile, true, appState.Settings.ServerConnection.RemoteRootPath);
 
                         if (FilePathShouldBeIgnoredDuringScan(appState, fo))
-                            return;
+                            continue;
 
                         appState.ServerFiles.Add(fo);
                     }
@@ -561,7 +609,7 @@ public static class Storage
                             return;
 
                         if (appState.CurrentSpinner is not null)
-                            appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.Text[..appState.CurrentSpinner.Text.IndexOf("...", StringComparison.Ordinal)]}... {fo.RelativeComparablePath}...";
+                            appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {fo.RelativeComparablePath}...";
 
                         appState.ServerFiles.Add(fo);
 
@@ -654,7 +702,7 @@ public static class Storage
         return status == NTStatus.STATUS_SUCCESS;
     }
 
-    public static void EnsureServerPathExists(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, string serverFolderPath)
+    public static void EnsureServerPathExists(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, string serverFolderPath, bool showOutput = false)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -678,15 +726,17 @@ public static class Storage
 
         serverFolderPath = serverFolderPath.FormatServerPath(appState);
 
+        if (showOutput && appState.CurrentSpinner is not null)
+            appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {serverFolderPath.TrimStart(appState.Settings.ServerConnection.RemoteRootPath)}...";
+        
         if (client.ServerFolderExists(fileStore, appState, serverFolderPath))
             return;
 
         var segments = serverFolderPath.Split('\\', StringSplitOptions.RemoveEmptyEntries);
         var buildingPath = string.Empty;
-        var spinnerText = $"Creating server path `{serverFolderPath}`...";
 
         if (appState.CurrentSpinner is not null)
-            appState.CurrentSpinner.Text = spinnerText;
+            appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {serverFolderPath}...";
 
         foreach (var segment in segments)
         {
@@ -719,7 +769,7 @@ public static class Storage
                 for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
                 {
                     if (appState.CurrentSpinner is not null)
-                        appState.CurrentSpinner.Text = $"{spinnerText} Retry {attempt + 1} ({x:N0})...";
+                        appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {serverFolderPath} Retry {attempt + 1} ({x:N0})...";
 
                     Thread.Sleep(1000);
                 }
@@ -736,9 +786,6 @@ public static class Storage
     
     public static void DeleteServerFile(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, FileObject sfo, bool showOutput = false)
     {
-        if (sfo.IsDeleted)
-            return;
-
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
@@ -760,14 +807,7 @@ public static class Storage
             return;
 
         if (showOutput && appState.CurrentSpinner is not null)
-        {
-            var text = appState.CurrentSpinner.Text;
-
-            if (text.Contains("... ", StringComparison.Ordinal))
-                text = appState.CurrentSpinner.Text[..text.IndexOf("... ", StringComparison.Ordinal)] + "...";
-                
-            appState.CurrentSpinner.Text = $"{text} {sfo.RelativeComparablePath}...";
-        }
+            appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {sfo.RelativeComparablePath}...";
         
         var success = true;
         var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
@@ -811,35 +851,24 @@ public static class Storage
             if (success)
                 break;
 
-            if (appState.CurrentSpinner is not null)
+            for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
             {
-                var text = appState.CurrentSpinner.Text;
+                if (appState.CurrentSpinner is not null)
+                    appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {sfo.RelativeComparablePath}... Retry {attempt + 1} ({x:N0})...";
 
-                if (text.Contains("... Retry", StringComparison.Ordinal))
-                    text = appState.CurrentSpinner.Text[..text.IndexOf("... Retry", StringComparison.Ordinal)] + "...";
-
-                appState.CurrentSpinner.Text = $"{text} Retry {attempt + 1} ({sfo.FileNameOrPathSegment})...";
+                Thread.Sleep(1000);
             }
-
-            Thread.Sleep(appState.Settings.WriteRetryDelaySeconds * 1000);
         }
 
-        if (success == false)
-        {
-            appState.Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{sfo.AbsolutePath}`");
-            appState.CancellationTokenSource.Cancel();
-        }
-        else
-        {
-            sfo.IsDeleted = true;
-        }
+        if (success)
+            return;
+
+        appState.Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{sfo.AbsolutePath}`");
+        appState.CancellationTokenSource.Cancel();
     }
 
     public static void DeleteServerFolder(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, FileObject sfo, bool showOutput = false)
     {
-        if (sfo.IsDeleted)
-            return;
-        
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
@@ -861,14 +890,7 @@ public static class Storage
             return;
 
         if (showOutput && appState.CurrentSpinner is not null)
-        {
-            var text = appState.CurrentSpinner.Text;
-
-            if (text.Contains("... ", StringComparison.Ordinal))
-                text = appState.CurrentSpinner.Text[..text.IndexOf("... ", StringComparison.Ordinal)] + "...";
-                
-            appState.CurrentSpinner.Text = $"{text} {sfo.RelativeComparablePath}...";
-        }
+            appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {sfo.RelativeComparablePath}...";
         
         var success = true;
         var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
@@ -903,33 +925,20 @@ public static class Storage
             if (success)
                 break;
 
-            if (appState.CurrentSpinner is not null)
+            for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
             {
-                var text = appState.CurrentSpinner.Text;
+                if (appState.CurrentSpinner is not null)
+                    appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {sfo.RelativeComparablePath}... Retry {attempt + 1} ({x:N0})...";
 
-                if (text.Contains("... Retry", StringComparison.Ordinal))
-                    text = appState.CurrentSpinner.Text[..text.IndexOf("... Retry", StringComparison.Ordinal)] + "...";
-                
-                appState.CurrentSpinner.Text = $"{text} Retry {attempt + 1} ({sfo.FileNameOrPathSegment}/)...";
-            }
-
-            Thread.Sleep(appState.Settings.WriteRetryDelaySeconds * 1000);
-        }
-
-        if (success == false)
-        {
-            appState.Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{sfo.AbsolutePath}`");
-            appState.CancellationTokenSource.Cancel();
-        }
-        else
-        {
-            sfo.IsDeleted = true;
-
-            foreach (var item in appState.ServerFiles.Where(i => i.IsFolder && i.RelativeComparablePath.StartsWith(sfo.RelativeComparablePath + '/')))
-            {
-                item.IsDeleted = true;
+                Thread.Sleep(1000);
             }
         }
+
+        if (success)
+            return;
+        
+        appState.Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{sfo.AbsolutePath}`");
+        appState.CancellationTokenSource.Cancel();
     }
 
     public static void DeleteServerFolderRecursive(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, FileObject sfo, bool showOutput = false)
@@ -964,7 +973,7 @@ public static class Storage
 
         // Delete all files in the path
 
-        foreach (var file in appState.ServerFiles.ToList().Where(f => f is { IsFile: true, IsDeleted: false } && f.AbsolutePath.StartsWith(sfo.AbsolutePath)))
+        foreach (var file in appState.ServerFiles.ToList().Where(f => f is { IsFile: true } && f.AbsolutePath.StartsWith(sfo.AbsolutePath)))
         {
             client.DeleteServerFile(fileStore, appState, file, showOutput);
         }
@@ -974,7 +983,7 @@ public static class Storage
         
         // Delete subfolders by level
 
-        foreach (var folder in appState.ServerFiles.ToList().Where(f => f is { IsFolder: true, IsDeleted: false } && f.AbsolutePath.StartsWith(sfo.AbsolutePath)).OrderByDescending(o => o.Level))
+        foreach (var folder in appState.ServerFiles.ToList().Where(f => f is { IsFolder: true } && f.AbsolutePath.StartsWith(sfo.AbsolutePath)).OrderByDescending(o => o.Level))
         {
             client.DeleteServerFolder(fileStore, appState, folder, showOutput);
         }
@@ -1022,13 +1031,8 @@ public static class Storage
                 return;
             }
          
-            var spinnerText = appState.CurrentSpinner?.Text ?? string.Empty;
-            
-            if (spinnerText.IndexOf("...", StringComparison.Ordinal) > 0)
-                spinnerText = spinnerText[..spinnerText.IndexOf("...", StringComparison.Ordinal)] + "...";            
-
             if (appState.CurrentSpinner is not null)
-                appState.CurrentSpinner.Text = $"{spinnerText} {localFilePath.TrimPath().TrimStart(appState.TrimmablePublishPath).TrimPath()} (0%)...";
+                appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {localFilePath.TrimPath().TrimStart(appState.TrimmablePublishPath).TrimPath()} (0%)...";
             
             serverFilePath = serverFilePath.FormatServerPath(appState);
 
@@ -1052,7 +1056,7 @@ public static class Storage
                 var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
                 var sfo = appState.ServerFiles.FirstOrDefault(f => f.AbsolutePath.TrimPath() == serverFilePath.TrimPath());
 
-                if (sfo is not null && sfo.IsDeleted == false)
+                if (sfo is not null)
                     client.DeleteServerFile(fileStore, appState, sfo);
 
                 for (var attempt = 0; attempt < retries; attempt++)
@@ -1090,7 +1094,7 @@ public static class Storage
                                 if (appState.CurrentSpinner is null)
                                     continue;
                                 
-                                appState.CurrentSpinner.Text = $"{spinnerText} {localFilePath.TrimPath().TrimStart(appState.TrimmablePublishPath).TrimPath()} ({(writeOffset > 0 ? 100/(fileSizeBytes/writeOffset) : 0):N0}%)...";
+                                appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {localFilePath.TrimPath().TrimStart(appState.TrimmablePublishPath).TrimPath()} ({(writeOffset > 0 ? 100/(fileSizeBytes/writeOffset) : 0):N0}%)...";
                             }
                         }
 
@@ -1104,11 +1108,14 @@ public static class Storage
                     for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
                     {
                         if (appState.CurrentSpinner is not null)
-                            appState.CurrentSpinner.Text = $"{spinnerText} Retry {attempt + 1} ({x:N0})...";
+                            appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {localFilePath.TrimPath().TrimStart(appState.TrimmablePublishPath).TrimPath()} Retry {attempt + 1} ({x:N0})...";
 
                         Thread.Sleep(1000);
                     }
                 }
+                
+                if (appState.CurrentSpinner is not null)
+                    appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {localFilePath.TrimPath().TrimStart(appState.TrimmablePublishPath).TrimPath()} (100%)...";
 
                 if (success == false)
                 {
@@ -1116,9 +1123,6 @@ public static class Storage
                     appState.CancellationTokenSource.Cancel();
                     return;
                 }
-
-                if (sfo is not null)
-                    sfo.IsDeleted = false;
 
                 client.ChangeFileDates(fileStore, appState, serverFilePath, createTime, lastWriteTime);
             }
@@ -1229,7 +1233,6 @@ public static class Storage
         {
             var success = true;
             var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
-            var spinnerText = appState.CurrentSpinner?.Text ?? string.Empty;
             
             for (var attempt = 0; attempt < retries; attempt++)
             {
@@ -1247,7 +1250,7 @@ public static class Storage
                         success = true;
                     
                     if (appState.CurrentSpinner is not null)
-                        appState.CurrentSpinner.Text = $"{spinnerText} ({numberOfBytesWritten.FormatBytes()})...";
+                        appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} Creating /app_offline.htm ({numberOfBytesWritten.FormatBytes()})...";
                 }
 
                 if (handle is not null)
@@ -1259,7 +1262,7 @@ public static class Storage
                 for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
                 {
                     if (appState.CurrentSpinner is not null)
-                        appState.CurrentSpinner.Text = $"{spinnerText} Retry {attempt + 1} ({x:N0})...";
+                        appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} Creating /app_offline.htm... Retry {attempt + 1} ({x:N0})...";
 
                     Thread.Sleep(1000);
                 }

@@ -15,7 +15,6 @@ public abstract class FileObject
     public long FileSizeBytes { get; protected set; }
     public bool IsFile { get; protected set; }
     public bool IsFolder { get; protected set; }
-    public bool IsDeleted { get; set; }
 
     public List<string> PathSegments { get; } = [];
 

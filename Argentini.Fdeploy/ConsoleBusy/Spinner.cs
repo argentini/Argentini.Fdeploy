@@ -44,6 +44,8 @@ namespace Argentini.Fdeploy.ConsoleBusy
 
         public ConsoleColor? Color { get; set; } = color;
         public string Text { get; set; } = text;
+        public string OriginalText { get; set; } = text;
+        public string RootText => Text.IndexOf("...", StringComparison.Ordinal) > 0 ? Text[..Text.IndexOf("...", StringComparison.Ordinal)] : Text; 
 
         private static Pattern DefaultPattern =>
             ConsoleHelper.ShouldFallback
@@ -54,8 +56,6 @@ namespace Argentini.Fdeploy.ConsoleBusy
             ConsoleHelper.ShouldFallback
                 ? _fallbackPattern
                 : _pattern;
-
-        /* isatty */
 
         public void Start()
         {
