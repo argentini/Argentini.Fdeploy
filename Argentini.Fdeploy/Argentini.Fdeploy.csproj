@@ -6,9 +6,9 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
 
-        <AssemblyVersion>1.2.7.0</AssemblyVersion>
-        <FileVersion>1.2.7.0</FileVersion>
-        <PackageVersion>1.2.7</PackageVersion>
+        <AssemblyVersion>1.2.8.0</AssemblyVersion>
+        <FileVersion>1.2.8.0</FileVersion>
+        <PackageVersion>1.2.8</PackageVersion>
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>fdeploy</ToolCommandName>
         <PackageOutputPath>./nupkg</PackageOutputPath>
@@ -27,7 +27,7 @@
         <PackageProjectUrl>https://github.com/argentini/Argentini.Fdeploy</PackageProjectUrl>
         <RepositoryUrl>https://github.com/argentini/Argentini.Deploy</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
-        <PackageReleaseNotes>Refactored deployment steps, output, orphan deletion while offline</PackageReleaseNotes>
+        <PackageReleaseNotes>Fixed an issue where server files were not being replaced</PackageReleaseNotes>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
         <PackageIcon>fdeploy-icon.png</PackageIcon>
