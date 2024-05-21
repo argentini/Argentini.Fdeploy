@@ -1089,8 +1089,10 @@ public sealed class AppRunner
                         var itemsToDelete = AppState.ServerFiles.Except(AppState.LocalFiles, new FileObjectComparer()).ToList();
 
                         // Remove paths that enclose ignore paths
-                        foreach (var item in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
+                        foreach (var fileObject in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
                         {
+                            var item = (ServerFileObject)fileObject;
+                            
                             foreach (var ignorePath in AppState.Settings.Paths.IgnoreFolderPaths)
                             {
                                 if (ignorePath.StartsWith(item.RelativeComparablePath) == false)
@@ -1101,8 +1103,10 @@ public sealed class AppRunner
                         }
 
                         // Remove descendants of folders to be deleted
-                        foreach (var item in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
+                        foreach (var fileObject in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
                         {
+                            var item = (ServerFileObject)fileObject;
+
                             foreach (var subitem in itemsToDelete.ToList().OrderByDescending(o => o.Level))
                             {
                                 if (subitem.Level > item.Level && subitem.RelativeComparablePath.StartsWith(item.RelativeComparablePath))
@@ -1114,7 +1118,7 @@ public sealed class AppRunner
                         {
                             if (item.IsFile)
                             {
-                                client.DeleteServerFile(fileStore, AppState, item, true);
+                                client.DeleteServerFile(fileStore, AppState, item.AbsolutePath, true);
                                 filesRemoved++;
                             }
                             else

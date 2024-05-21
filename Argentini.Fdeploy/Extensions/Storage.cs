@@ -662,7 +662,8 @@ public static class Storage
 
         serverFilePath = serverFilePath.FormatServerPath(appState);
         
-        var status = fileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_READ | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.Read, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+        var status = fileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_READ, 0, ShareAccess.Read, CreateDisposition.FILE_OPEN, 0, null);
+        //var status = fileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_READ | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.Read, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
 
         if (handle is not null)
             fileStore.CloseFile(handle);
@@ -784,7 +785,7 @@ public static class Storage
         }
     }
     
-    public static void DeleteServerFile(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, FileObject sfo, bool showOutput = false)
+    public static void DeleteServerFile(this SMB2Client? client, ISMBFileStore? fileStore, AppState appState, string serverAbsolutePath, bool showOutput = false)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -806,28 +807,46 @@ public static class Storage
         if (client is null || client.IsConnected == false || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
+        var serverRelativePath = serverAbsolutePath.SetNativePathSeparators().TrimPath().TrimStart(appState.Settings.ServerConnection.RemoteRootPath.SetNativePathSeparators().TrimPath()).TrimPath();
+        
         if (showOutput && appState.CurrentSpinner is not null)
-            appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {sfo.RelativeComparablePath}...";
+            appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {serverRelativePath}...";
         
         var success = true;
         var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
         
         for (var attempt = 0; attempt < retries; attempt++)
         {
-            var status = fileStore.CreateFile(out var handle, out _, sfo is ServerFileObject serverFileObject ? serverFileObject.AbsolutePath : ((LocalFileObject)sfo).AbsoluteServerPath, AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+            var status = fileStore.CreateFile(out var handle, out _, serverAbsolutePath, AccessMask.GENERIC_WRITE | AccessMask.DELETE, 0, ShareAccess.Read, CreateDisposition.FILE_OPEN, 0, null);
+            //var status = fileStore.CreateFile(out var handle, out _, serverAbsolutePath, AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
 
-            if (status == NTStatus.STATUS_SUCCESS)
+            try
             {
-                var fileDispositionInformation = new FileDispositionInformation
-                {
-                    DeletePending = true
-                };
-                
-                status = fileStore.SetFileInformation(handle, fileDispositionInformation);
-
                 if (status == NTStatus.STATUS_SUCCESS)
                 {
-                    var fileExists = client.ServerFileExists(fileStore, appState, sfo.AbsolutePath);
+                    var fileDispositionInformation = new FileDispositionInformation
+                    {
+                        DeletePending = true
+                    };
+
+                    status = fileStore.SetFileInformation(handle, fileDispositionInformation);
+
+                    if (handle is not null)
+                        fileStore.CloseFile(handle);
+
+                    if (status == NTStatus.STATUS_SUCCESS)
+                    {
+                        var fileExists = client.ServerFileExists(fileStore, appState, serverAbsolutePath);
+
+                        if (fileExists == false)
+                            success = true;
+                        else
+                            success = false;
+                    }
+                }
+                else
+                {
+                    var fileExists = client.ServerFileExists(fileStore, appState, serverAbsolutePath);
 
                     if (fileExists == false)
                         success = true;
@@ -835,18 +854,11 @@ public static class Storage
                         success = false;
                 }
             }
-            else
+            finally
             {
-                var fileExists = client.ServerFileExists(fileStore, appState, sfo.AbsolutePath);
-        
-                if (fileExists == false)
-                    success = true;
-                else        
-                    success = false;
+                if (handle is not null)
+                    fileStore.CloseFile(handle);
             }
-
-            if (handle is not null)
-                fileStore.CloseFile(handle);
 
             if (success)
                 break;
@@ -854,7 +866,7 @@ public static class Storage
             for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
             {
                 if (appState.CurrentSpinner is not null)
-                    appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {sfo.RelativeComparablePath}... Retry {attempt + 1} ({x:N0})...";
+                    appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {serverRelativePath}... Retry {attempt + 1} ({x:N0})...";
 
                 Thread.Sleep(1000);
             }
@@ -863,7 +875,7 @@ public static class Storage
         if (success)
             return;
 
-        appState.Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{sfo.AbsolutePath}`");
+        appState.Exceptions.Add($"Failed to delete file after {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{serverAbsolutePath}`");
         appState.CancellationTokenSource.Cancel();
     }
 
@@ -975,7 +987,7 @@ public static class Storage
 
         foreach (var file in appState.ServerFiles.ToList().Where(f => f is { IsFile: true } && f.AbsolutePath.StartsWith(sfo.AbsolutePath)))
         {
-            client.DeleteServerFile(fileStore, appState, file, showOutput);
+            client.DeleteServerFile(fileStore, appState, file.AbsolutePath, showOutput);
         }
 
         if (appState.CancellationTokenSource.IsCancellationRequested)
@@ -1054,10 +1066,16 @@ public static class Storage
 
                 var success = true;
                 var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
-                var sfo = appState.ServerFiles.FirstOrDefault(f => f.AbsolutePath.TrimPath() == serverFilePath.TrimPath());
+                var lfo = appState.LocalFiles.FirstOrDefault(f => f.AbsolutePath.TrimPath() == localFilePath.TrimPath());
 
-                if (sfo is not null)
-                    client.DeleteServerFile(fileStore, appState, sfo);
+                if (lfo is null)
+                {
+                    appState.Exceptions.Add($"Failed to copy file {retries:N0} {(retries == 1 ? "retry" : "retries")}: `{serverFilePath}`");
+                    appState.CancellationTokenSource.Cancel();
+                    return;
+                }
+                
+                client.DeleteServerFile(fileStore, appState, serverFilePath);
 
                 for (var attempt = 0; attempt < retries; attempt++)
                 {
@@ -1101,6 +1119,11 @@ public static class Storage
                         if (handle is not null)
                             fileStore.CloseFile(handle);
                     }
+
+                    var fileInfo = client.GetServerFileInfo(fileStore, appState, serverFilePath);
+
+                    if (fileInfo is null || lfo is null || fileInfo.FileSizeBytes != lfo.FileSizeBytes)
+                        success = false;
                     
                     if (success)
                         break;
@@ -1224,7 +1247,7 @@ public static class Storage
 
         var sfo = new ServerFileObject(appState, $"{appState.Settings.ServerConnection.RemoteRootPath}\\app_offline.htm".FormatServerPath(appState), DateTimeOffset.UtcNow.ToUnixTimeSeconds(), DateTimeOffset.UtcNow.ToUnixTimeSeconds(), appState.AppOfflineMarkup.Length, true, appState.Settings.ServerConnection.RemoteRootPath);
         
-        client.DeleteServerFile(fileStore, appState, sfo);
+        client.DeleteServerFile(fileStore, appState, sfo.AbsolutePath);
 
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -1305,7 +1328,7 @@ public static class Storage
 
         var sfo = new ServerFileObject(appState, $"{appState.Settings.ServerConnection.RemoteRootPath}\\app_offline.htm".FormatServerPath(appState), DateTimeOffset.UtcNow.ToUnixTimeSeconds(), DateTimeOffset.UtcNow.ToUnixTimeSeconds(), appState.AppOfflineMarkup.Length, true, appState.Settings.ServerConnection.RemoteRootPath);
         
-        client.DeleteServerFile(fileStore, appState, sfo);
+        client.DeleteServerFile(fileStore, appState, sfo.AbsolutePath);
     }
     
     #endregion
