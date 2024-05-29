@@ -115,6 +115,11 @@ namespace Argentini.Fdeploy.ConsoleBusy
             {
                 lock (Console.Out)
                 {
+                    var truncated = Text;
+
+                    if (truncated.Length >= Console.WindowWidth - 5)
+                        truncated = truncated[..(Console.WindowWidth - 5)].TrimEnd() + "...";
+                    
                     if (_enabled)
                     {
                         var currentLeft = Console.CursorLeft;
@@ -123,7 +128,7 @@ namespace Argentini.Fdeploy.ConsoleBusy
                         ConsoleHelper.ClearCurrentConsoleLine(_lineLength, _enabled ? _cursorTop : currentTop);
                         ConsoleHelper.WriteWithColor(frame, Color ?? Console.ForegroundColor);
                         Console.Write(" ");
-                        Console.Write(Text);
+                        Console.Write(truncated);
                         _lineLength = Console.CursorLeft;
                         Console.Write(terminator);
                         Console.Out.Flush();
@@ -135,8 +140,8 @@ namespace Argentini.Fdeploy.ConsoleBusy
 
                         ConsoleHelper.WriteWithColor(frame, Color ?? Console.ForegroundColor);
                         Console.Write(" ");
-                        Console.Write(Text);
-                        _lineLength = frame.Length + 1 + Text.Length;
+                        Console.Write(truncated);
+                        _lineLength = frame.Length + 1 + truncated.Length;
                         Console.Write(terminator);
                         Console.Out.Flush();
                     }
