@@ -477,7 +477,10 @@ public static class Storage
         finally
         {
             if (fileHandle is not null)
+            {
+                fileStore?.FlushFileBuffers(fileHandle);
                 fileStore?.CloseFile(fileHandle);
+            }
         }
         
         return null;
@@ -520,7 +523,10 @@ public static class Storage
             status = fileStore.QueryDirectory(out var fileFolderList, fileFolderHandle, "*", FileInformationClass.FileDirectoryInformation);
 
             if (fileFolderHandle is not null)
+            {
+                fileStore.FlushFileBuffers(fileFolderHandle);
                 status = fileStore.CloseFile(fileFolderHandle);
+            }
 
             if (status == NTStatus.STATUS_SUCCESS)
             {
@@ -665,9 +671,12 @@ public static class Storage
         var status = fileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_READ, 0, ShareAccess.Read, CreateDisposition.FILE_OPEN, 0, null);
         //var status = fileStore.CreateFile(out var handle, out _, serverFilePath, AccessMask.GENERIC_READ | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.Read, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
 
-        if (handle is not null)
-            fileStore.CloseFile(handle);
-            
+        if (handle is null)
+            return status == NTStatus.STATUS_SUCCESS;
+        
+        fileStore.FlushFileBuffers(handle);
+        fileStore.CloseFile(handle);
+
         return status == NTStatus.STATUS_SUCCESS;
     }
     
@@ -697,8 +706,11 @@ public static class Storage
         
         var status = fileStore.CreateFile(out var handle, out _, serverFolderPath, AccessMask.GENERIC_READ, FileAttributes.Directory, ShareAccess.Read | ShareAccess.Write, CreateDisposition.FILE_OPEN, CreateOptions.FILE_DIRECTORY_FILE, null);
 
-        if (handle is not null)
-            fileStore.CloseFile(handle);
+        if (handle is null)
+            return status == NTStatus.STATUS_SUCCESS;
+        
+        fileStore.FlushFileBuffers(handle);
+        fileStore.CloseFile(handle);
 
         return status == NTStatus.STATUS_SUCCESS;
     }
@@ -757,7 +769,10 @@ public static class Storage
                 var status = fileStore.CreateFile(out var handle, out _, buildingPath, AccessMask.GENERIC_WRITE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_CREATE, CreateOptions.FILE_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
 
                 if (handle is not null)
+                {
+                    fileStore.FlushFileBuffers(handle);
                     fileStore.CloseFile(handle);
+                }
 
                 if (status is NTStatus.STATUS_SUCCESS or NTStatus.STATUS_OBJECT_NAME_COLLISION)
                 {
@@ -832,7 +847,10 @@ public static class Storage
                     status = fileStore.SetFileInformation(handle, fileDispositionInformation);
 
                     if (handle is not null)
+                    {
+                        fileStore.FlushFileBuffers(handle);
                         fileStore.CloseFile(handle);
+                    }
 
                     if (status == NTStatus.STATUS_SUCCESS)
                     {
@@ -857,7 +875,10 @@ public static class Storage
             finally
             {
                 if (handle is not null)
+                {
+                    fileStore.FlushFileBuffers(handle);
                     fileStore.CloseFile(handle);
+                }
             }
 
             if (success)
@@ -932,7 +953,10 @@ public static class Storage
             }
 
             if (handle is not null)
+            {
+                fileStore.FlushFileBuffers(handle);
                 fileStore.CloseFile(handle);
+            }
 
             if (success)
                 break;
@@ -1117,14 +1141,17 @@ public static class Storage
                         }
 
                         if (handle is not null)
+                        {
+                            fileStore.FlushFileBuffers(handle);
                             fileStore.CloseFile(handle);
+                        }
                     }
-
+                    
                     var fileInfo = client.GetServerFileInfo(fileStore, appState, serverFilePath);
 
                     if (fileInfo is null || lfo is null || fileInfo.FileSizeBytes != lfo.FileSizeBytes)
                         success = false;
-                    
+
                     if (success)
                         break;
 
@@ -1214,9 +1241,12 @@ public static class Storage
             appState.Exceptions.Add($"Failed to prepare file time set `{serverFilePath}`");
             appState.CancellationTokenSource.Cancel();
         }
+
+        if (handle is null)
+            return;
         
-        if (handle is not null)
-            fileStore.CloseFile(handle);
+        fileStore.FlushFileBuffers(handle);
+        fileStore.CloseFile(handle);
     }    
 
     #endregion
@@ -1277,7 +1307,10 @@ public static class Storage
                 }
 
                 if (handle is not null)
+                {
+                    fileStore.FlushFileBuffers(handle);
                     fileStore.CloseFile(handle);
+                }
 
                 if (success)
                     break;
