@@ -822,6 +822,9 @@ public static class Storage
         if (client is null || client.IsConnected == false || fileStore is null || appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
+        if (client.ServerFileExists(fileStore, appState, serverAbsolutePath) == false)
+            return;
+        
         var serverRelativePath = serverAbsolutePath.SetNativePathSeparators().TrimPath().TrimStart(appState.Settings.ServerConnection.RemoteRootPath.SetNativePathSeparators().TrimPath()).TrimPath();
         
         if (showOutput && appState.CurrentSpinner is not null)
@@ -832,11 +835,13 @@ public static class Storage
         
         for (var attempt = 0; attempt < retries; attempt++)
         {
-            var status = fileStore.CreateFile(out var handle, out _, serverAbsolutePath, AccessMask.GENERIC_WRITE | AccessMask.DELETE, 0, ShareAccess.Read, CreateDisposition.FILE_OPEN, 0, null);
-            //var status = fileStore.CreateFile(out var handle, out _, serverAbsolutePath, AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
-
+            object? handle = null;
+            
             try
             {
+                //var status = fileStore.CreateFile(out var handle, out _, serverAbsolutePath, AccessMask.GENERIC_WRITE | AccessMask.DELETE, 0, ShareAccess.Read, CreateDisposition.FILE_OPEN, 0, null);
+                var status = fileStore.CreateFile(out handle, out _, serverAbsolutePath, AccessMask.GENERIC_WRITE | AccessMask.DELETE | AccessMask.SYNCHRONIZE, FileAttributes.Normal, ShareAccess.None, CreateDisposition.FILE_OPEN, CreateOptions.FILE_NON_DIRECTORY_FILE | CreateOptions.FILE_SYNCHRONOUS_IO_ALERT, null);
+                
                 if (status == NTStatus.STATUS_SUCCESS)
                 {
                     var fileDispositionInformation = new FileDispositionInformation
@@ -852,24 +857,14 @@ public static class Storage
                         fileStore.CloseFile(handle);
                     }
 
-                    if (status == NTStatus.STATUS_SUCCESS)
-                    {
-                        var fileExists = client.ServerFileExists(fileStore, appState, serverAbsolutePath);
+                    success = status == NTStatus.STATUS_SUCCESS;
 
-                        if (fileExists == false)
-                            success = true;
-                        else
-                            success = false;
-                    }
+                    if (success)
+                        success = client.ServerFileExists(fileStore, appState, serverAbsolutePath) == false;
                 }
                 else
                 {
-                    var fileExists = client.ServerFileExists(fileStore, appState, serverAbsolutePath);
-
-                    if (fileExists == false)
-                        success = true;
-                    else
-                        success = false;
+                    success = client.ServerFileExists(fileStore, appState, serverAbsolutePath) == false;
                 }
             }
             finally
@@ -1098,9 +1093,12 @@ public static class Storage
                     appState.CancellationTokenSource.Cancel();
                     return;
                 }
-                
+
                 client.DeleteServerFile(fileStore, appState, serverFilePath);
 
+                if (appState.CancellationTokenSource.IsCancellationRequested)
+                    return;
+                
                 for (var attempt = 0; attempt < retries; attempt++)
                 {
                     using (var localFileStream = new FileStream(localFilePath, FileMode.Open, FileAccess.Read))
