@@ -385,7 +385,7 @@ public sealed class AppRunner
 			return;
 		}
 
-        await ColonOutAsync("Destination", $@"\\{AppState.Settings.ServerConnection.ServerAddress}\{AppState.Settings.ServerConnection.ShareName}\{AppState.Settings.ServerConnection.RemoteRootPath}");
+        await ColonOutAsync("Destination", $"{AppState.Settings.ServerConnection.ServerAddress}{Path.DirectorySeparatorChar}{AppState.Settings.ServerConnection.ShareName}{Path.DirectorySeparatorChar}{AppState.Settings.ServerConnection.RemoteRootPath}");
 		await ColonOutAsync("Settings File", AppState.YamlProjectFilePath);
         
         if (AppState.YamlCredsFilePath != string.Empty)
