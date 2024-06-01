@@ -298,9 +298,6 @@ public static class Storage
         if (appState.ServerFolderExists(serverFolderPath))
             return;
 
-        if (appState.CurrentSpinner is not null)
-            appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {serverFolderPath}...";
-
         var success = false;
         var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
 
@@ -488,7 +485,7 @@ public static class Storage
             }
          
             if (appState.CurrentSpinner is not null)
-                appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {fo.RelativeComparablePath} (0%)...";
+                appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {fo.RelativeComparablePath}...";
             
             appState.EnsureServerPathExists(fo.AbsoluteServerPath.TrimEnd(fo.AbsoluteServerPath.GetLastPathSegment()));
             
@@ -526,12 +523,6 @@ public static class Storage
                     }
                 }
                 
-                if (appState.CurrentSpinner is not null)
-                {
-                    appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {fo.RelativeComparablePath} (100%)...";
-                    Thread.Sleep(10);
-                }
-
                 if (success)
                     return;
                 

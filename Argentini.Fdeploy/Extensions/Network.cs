@@ -10,7 +10,7 @@ public static class Network
             return $"/Volumes/{appState.Settings.ServerConnection.ShareName}{(string.IsNullOrEmpty(appState.Settings.ServerConnection.RemoteRootPath) ? string.Empty : $"{Path.DirectorySeparatorChar}{appState.Settings.ServerConnection.RemoteRootPath}")}";
 
         if (Identify.GetOsPlatform() == OSPlatform.Windows)
-            return $@"\\{appState.Settings.ServerConnection.ServerAddress}\{appState.Settings.ServerConnection.ShareName}{(string.IsNullOrEmpty(appState.Settings.ServerConnection.RemoteRootPath) ? string.Empty : $"{Path.DirectorySeparatorChar}{appState.Settings.ServerConnection.RemoteRootPath}")}";
+            return $"{appState.Settings.WindowsMountLetter}:{(string.IsNullOrEmpty(appState.Settings.ServerConnection.RemoteRootPath) ? string.Empty : $"{Path.DirectorySeparatorChar}{appState.Settings.ServerConnection.RemoteRootPath}")}";
 
         return string.Empty;
     }
@@ -54,11 +54,18 @@ public static class Network
 
         if (Identify.GetOsPlatform() == OSPlatform.Windows)
         {
-            var cmdResult = await Cli.Wrap("net")
-                .WithArguments(["use", $@"\\{appState.Settings.ServerConnection.ServerAddress}\{appState.Settings.ServerConnection.ShareName}", $"/user:{appState.Settings.ServerConnection.UserName}", appState.Settings.ServerConnection.Password])
+            await Cli.Wrap("powershell")
+                .WithArguments(["net", "use", $"{appState.Settings.WindowsMountLetter}:", "/delete", "/y"])
+                .WithValidation(CommandResultValidation.None)
+                .ExecuteBufferedAsync();
+            
+            var cmdResult = await Cli.Wrap("powershell")
+                .WithArguments(["net", "use", $"{appState.Settings.WindowsMountLetter}:", $@"\\{appState.Settings.ServerConnection.ServerAddress}\{appState.Settings.ServerConnection.ShareName}", $"/user:{(string.IsNullOrEmpty(appState.Settings.ServerConnection.Domain) ? string.Empty : $@"{appState.Settings.ServerConnection.Domain}\")}{appState.Settings.ServerConnection.UserName}", appState.Settings.ServerConnection.Password])
                 .WithValidation(CommandResultValidation.None)
                 .ExecuteBufferedAsync();
 
+            //var cl = $@"net use {appState.Settings.WindowsMountLetter}: \\{appState.Settings.ServerConnection.ServerAddress}\{appState.Settings.ServerConnection.ShareName} /user:{(string.IsNullOrEmpty(appState.Settings.ServerConnection.Domain) ? string.Empty : $@"{appState.Settings.ServerConnection.Domain}\")}{appState.Settings.ServerConnection.UserName} {appState.Settings.ServerConnection.Password}";
+            
             if (cmdResult.IsSuccess)
                 return true;
             
@@ -108,8 +115,9 @@ public static class Network
 
         if (Identify.GetOsPlatform() == OSPlatform.Windows)
         {
-            var cmdResult = await Cli.Wrap("net")
-                .WithArguments(["use", $@"\\{appState.Settings.ServerConnection.ServerAddress}\{appState.Settings.ServerConnection.ShareName}", "/delete"])
+            var cmdResult = await Cli.Wrap("powershell")
+                .WithArguments(["net", "use", $"{appState.Settings.WindowsMountLetter}:", "/delete", "/y"])
+                .WithValidation(CommandResultValidation.None)
                 .ExecuteBufferedAsync();
 
             if (cmdResult.IsSuccess)

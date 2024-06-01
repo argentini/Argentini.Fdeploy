@@ -37,11 +37,14 @@ CleanProject: true
 # Before publishing the project, delete and recreate the bin and obj folders
 PurgeProject: true
 
-# Unmount share if already mounted and mount again
+# Unmount share if already mounted and mount again; default is true
 MountShare: true
 
-# Unmount share when deployment completes
+# Unmount share when deployment completes; default is true
 UnmountShare: true
+
+# Windows drive letter for mount point; default is Q 
+WindowsMountLetter: Q
 
 Project:
 

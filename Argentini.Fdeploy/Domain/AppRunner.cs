@@ -95,6 +95,7 @@ public sealed class AppRunner
         //AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/PentecHealthWebsite/Tolnedra", "fdeploy-staging.yml");
         AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Fynydd-Website-2024/UmbracoCms", "fdeploy-staging.yml");
         //AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Tolnedra2/UmbracoCms", "fdeploy-prod.yml");
+        //AppState.YamlProjectFilePath = Path.Combine(@"c:\code\Fynydd-Website-2024\UmbracoCms", "fdeploy-staging.yml");
         
         #endif
 
@@ -1186,7 +1187,7 @@ public sealed class AppRunner
         {
             if (AppState.Settings.UnmountShare)
             {
-                await Spinner.StartAsync("Unmounting network share...", async spinner =>
+                await Spinner.StartAsync("Flushing caches and unmounting network share...", async spinner =>
                 {
                     AppState.CurrentSpinner = spinner;
 
