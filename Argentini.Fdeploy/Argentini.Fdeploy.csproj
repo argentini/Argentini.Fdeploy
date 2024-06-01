@@ -35,7 +35,7 @@
 
     <ItemGroup>
       <PackageReference Include="CliWrap" Version="3.6.6" />
-      <PackageReference Include="SMBLibrary" Version="1.5.1.3" />
+      <PackageReference Include="SharpCifs.Std" Version="0.2.13" />
       <PackageReference Include="YamlDotNet" Version="15.1.4" />
     </ItemGroup>
 

@@ -37,6 +37,12 @@ CleanProject: true
 # Before publishing the project, delete and recreate the bin and obj folders
 PurgeProject: true
 
+# Unmount share if already mounted and mount again
+MountShare: true
+
+# Unmount share when deployment completes
+UnmountShare: true
+
 Project:
 
     # Project file (.csproj) path and filename, relative to the location of this file

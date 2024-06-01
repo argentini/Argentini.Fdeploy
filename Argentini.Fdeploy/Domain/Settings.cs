@@ -16,6 +16,9 @@ public sealed class Settings
     public bool CleanProject { get; set; } = true;
     public bool PurgeProject { get; set; } = true;
 
+    public bool MountShare { get; set; } = true;
+    public bool UnmountShare { get; set; } = true;
+    
     public ServerConnectionSettings ServerConnection { get; set; } = new();
     public ProjectSettings Project { get; set; } = new();
     public PathsSettings Paths { get; set; } = new();

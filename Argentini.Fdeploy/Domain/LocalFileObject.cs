@@ -6,12 +6,14 @@ public sealed class LocalFileObject : FileObject
     public bool AlwaysOverwrite { get; }
     public string AbsoluteServerPath { get; }
 
-    public LocalFileObject(AppState appState, string absolutePath, long createTime, long lastWriteTime, long fileSizeBytes, bool isFile, string rootPath)
+    public LocalFileObject(AppState appState, string absolutePath, long createTime, long lastWriteTime, long fileSizeBytes, bool isFile)
     {
-        AbsolutePath = $"{absolutePath.FormatLocalPath(appState)}";
+        var formattedPath = absolutePath.MakeRelativePath().TrimStart(appState.TrimmablePublishPath).MakeRelativePath();
+        
+        AbsolutePath = $"{appState.PublishPath}{(string.IsNullOrEmpty(formattedPath) == false ? $"{Path.DirectorySeparatorChar}{formattedPath}" : string.Empty)}";
         FileNameOrPathSegment = AbsolutePath.GetLastPathSegment();
         ParentPath = AbsolutePath.TrimEnd(FileNameOrPathSegment)?.TrimEnd(Path.DirectorySeparatorChar) ?? string.Empty;
-        RelativeComparablePath = AbsolutePath.TrimPath().TrimStart(rootPath.TrimPath()).TrimPath();
+        RelativeComparablePath = AbsolutePath.MakeRelativePath().TrimStart(appState.PublishPath.MakeRelativePath()).MakeRelativePath();
 
         CreateTime = createTime;
         LastWriteTime = lastWriteTime;
@@ -25,7 +27,7 @@ public sealed class LocalFileObject : FileObject
         {
             foreach (var alwaysOverwritePath in appState.Settings.Paths.AlwaysOverwritePaths)
             {
-                var relativeParentPath = ParentPath.TrimStart(appState.PublishPath).TrimPath(); 
+                var relativeParentPath = ParentPath.TrimStart(appState.PublishPath).MakeRelativePath(); 
                 var overwriteAtRoot = alwaysOverwritePath is "" or "~" && relativeParentPath == string.Empty;
 
                 if (relativeParentPath.InvariantEquals(alwaysOverwritePath.Replace("~", string.Empty)) == false && overwriteAtRoot == false)
@@ -40,7 +42,7 @@ public sealed class LocalFileObject : FileObject
         {
             foreach (var alwaysOverwritePath in appState.Settings.Paths.AlwaysOverwritePathsWithRecurse)
             {
-                var relativeParentPath = ParentPath.TrimStart(appState.PublishPath).TrimPath();
+                var relativeParentPath = ParentPath.TrimStart(appState.PublishPath).MakeRelativePath();
 
                 if (alwaysOverwritePath is "" or "~")
                 {
@@ -56,7 +58,7 @@ public sealed class LocalFileObject : FileObject
             }
         }
         
-        AbsoluteServerPath = $"{appState.Settings.ServerConnection.RemoteRootPath}\\{RelativeComparablePath}".FormatServerPath(appState);
+        AbsoluteServerPath = $"{appState.GetServerPathPrefix()}{Path.DirectorySeparatorChar}{RelativeComparablePath.MakeRelativePath()}";
         
         foreach (var staticFolderPath in appState.Settings.Paths.OnlineCopyFolderPaths)
         {

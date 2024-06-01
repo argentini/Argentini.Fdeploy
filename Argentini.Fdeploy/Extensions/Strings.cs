@@ -918,19 +918,9 @@ public static class Strings
     
     #endregion
     
-    public static string TrimPath(this string? path)
+    public static string MakeRelativePath(this string? path)
     {
-        return path?.Trim('/').Trim('\\') ?? string.Empty;
-    }
-
-    public static string NormalizeSmbPath(this string path)
-    {
-        return path.TrimPath().SetSmbPathSeparators().TrimPath();
-    }
-
-    public static string NormalizePath(this string path)
-    {
-        return path.SetNativePathSeparators().TrimPath();
+        return path?.Trim('/').Trim('\\').SetNativePathSeparators() ?? string.Empty;
     }
 
     public static void NormalizePaths(this List<string> source)
@@ -938,20 +928,10 @@ public static class Strings
         var list = new List<string>();
         
         foreach (var path in source)
-            list.Add(NormalizePath(path));
+            list.Add(path.MakeRelativePath());
 
         source.Clear();
         source.AddRange(list);
-    }
-
-    public static void NormalizePaths(this IEnumerable<string> source)
-    {
-        var list = new List<string>();
-        
-        foreach (var path in source)
-            list.Add(NormalizePath(path));
-
-        source = list;
     }
 
     public static string GetLastPathSegment(this string filePath)
@@ -960,26 +940,12 @@ public static class Strings
             return filePath;
         
         if (filePath.IndexOf('\\') > -1)
-            return filePath.NormalizeSmbPath()[filePath.LastIndexOf('\\')..].TrimStart('\\');
+            return filePath.MakeRelativePath()[filePath.LastIndexOf('\\')..].TrimStart('\\');
 
         if (filePath.IndexOf('/') > -1)
-            return filePath.NormalizePath()[filePath.LastIndexOf('/')..].TrimStart('/');
+            return filePath.MakeRelativePath()[filePath.LastIndexOf('/')..].TrimStart('/');
 
         return filePath;
-    }
-
-    public static string FormatLocalPath(this string localFilePath, AppState appState)
-    {
-        var formattedPath = localFilePath.NormalizePath().TrimStart(appState.TrimmablePublishPath).TrimPath();
-        
-        return $"{appState.PublishPath}{(formattedPath != string.Empty ? $"/{formattedPath}" : string.Empty)}";
-    }
-
-    public static string FormatServerPath(this string serverFilePath, AppState appState)
-    {
-        var formattedPath = serverFilePath.NormalizeSmbPath().TrimStart(appState.Settings.ServerConnection.RemoteRootPath).TrimPath();
-        
-        return $"{appState.Settings.ServerConnection.RemoteRootPath}{(formattedPath != string.Empty ? $"\\{formattedPath}" : string.Empty)}";
     }
 
     public static string FormatElapsedTime(this TimeSpan elapsed)

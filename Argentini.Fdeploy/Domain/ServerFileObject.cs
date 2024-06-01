@@ -2,12 +2,12 @@ namespace Argentini.Fdeploy.Domain;
 
 public sealed class ServerFileObject: FileObject
 {
-    public ServerFileObject(AppState appState, string absolutePath, long createTime, long lastWriteTime, long fileSizeBytes, bool isFile, string rootPath)
+    public ServerFileObject(AppState appState, string absolutePath, long createTime, long lastWriteTime, long fileSizeBytes, bool isFile)
     {
-        AbsolutePath = absolutePath.FormatServerPath(appState);
+        AbsolutePath = absolutePath;
         FileNameOrPathSegment = AbsolutePath.GetLastPathSegment();
         ParentPath = AbsolutePath.TrimEnd(FileNameOrPathSegment)?.TrimEnd('\\') ?? string.Empty;
-        RelativeComparablePath = AbsolutePath.SetNativePathSeparators().TrimPath().TrimStart(rootPath.SetNativePathSeparators().TrimPath()).TrimPath();
+        RelativeComparablePath = AbsolutePath.MakeRelativePath().TrimStart(appState.GetServerPathPrefix().MakeRelativePath()).MakeRelativePath();
 
         CreateTime = createTime;
         LastWriteTime = lastWriteTime;
