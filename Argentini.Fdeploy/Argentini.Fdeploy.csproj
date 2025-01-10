@@ -2,13 +2,13 @@
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
-        <TargetFramework>net8.0</TargetFramework>
+        <TargetFramework>net9.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
 
-        <AssemblyVersion>1.3.1.0</AssemblyVersion>
-        <FileVersion>1.3.1.0</FileVersion>
-        <PackageVersion>1.3.1</PackageVersion>
+        <AssemblyVersion>1.3.2.0</AssemblyVersion>
+        <FileVersion>1.3.2.0</FileVersion>
+        <PackageVersion>1.3.2</PackageVersion>
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>fdeploy</ToolCommandName>
         <PackageOutputPath>./nupkg</PackageOutputPath>
@@ -19,23 +19,23 @@
         <Description>
             Fdeploy is a CLI tool for performing SMB file-copy based deployments of ASP.NET web applications (Razor, Blazor, etc.).
 
-            Install dotnet 8 from https://dotnet.microsoft.com/en-us/download and then install Fdeploy with the following command:
+            Install dotnet 9 from https://dotnet.microsoft.com/en-us/download and then install Fdeploy with the following command:
 
             dotnet tool install --global argentini.fdeploy
         </Description>
-        <Copyright>Copyright (c) Michael Argentini 2024.</Copyright>
+        <Copyright>Copyright (c) Michael Argentini 2025.</Copyright>
         <PackageProjectUrl>https://github.com/argentini/Argentini.Fdeploy</PackageProjectUrl>
-        <RepositoryUrl>https://github.com/argentini/Argentini.Deploy</RepositoryUrl>
+        <RepositoryUrl>https://github.com/argentini/Argentini.Fdeploy</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
-        <PackageReleaseNotes>Refactored to use native OS network services</PackageReleaseNotes>
+        <PackageReleaseNotes>Update to .NET 9.0, added PublishPath to settings, added PublishParameters to settings</PackageReleaseNotes>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
         <PackageIcon>fdeploy-icon.png</PackageIcon>
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="CliWrap" Version="3.6.6" />
-      <PackageReference Include="YamlDotNet" Version="15.1.6" />
+      <PackageReference Include="CliWrap" Version="3.7.0" />
+      <PackageReference Include="YamlDotNet" Version="16.3.0" />
     </ItemGroup>
 
     <ItemGroup>

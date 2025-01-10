@@ -48,17 +48,20 @@ WindowsMountLetter: Q
 
 Project:
 
-    # Project file (.csproj) path and filename, relative to the location of this file
+    # Project/Solution file (.csproj, .sln) path and filename, relative to the location of this file
     ProjectFilePath: UmbracoCms.csproj
 
-    # .NET version to target; default is 8.0
-    TargetFramework: 8.0
+    # .NET version to target; default is 9.0
+    TargetFramework: 9.0
 
     # Environment name; default is "Production"
     EnvironmentName: Production
 
     # Configuration; default is "Release"
     BuildConfiguration: Release
+
+    # Additional publish parameters; default is ""
+    PublishParameters: ""
     
     # Copy specific files into the published build folder; paths are relative to the root path;
     # processed without ignore rules
@@ -86,6 +89,10 @@ ServerConnection:
     RemoteRootPath: "\\web\\website.com\\www"
 
 Paths:
+
+    # Path for the temporary published project;
+    # defaults to "bin/publish" in the current working directory
+    PublishPath: "bin/publish"
 
     # Paths to folders that can be copied while the server is running;
     # folders are copied before the server is taken offline which shortens server downtime;
