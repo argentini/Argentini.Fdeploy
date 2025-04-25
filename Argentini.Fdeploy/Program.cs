@@ -1,6 +1,6 @@
 ﻿namespace Argentini.Fdeploy;
 
-internal class Program
+internal abstract class Program
 {
 	private static async Task Main(string[] args)
 	{
@@ -39,9 +39,6 @@ internal class Program
 
         await Console.Out.WriteLineAsync();
 
-        if (runner.AppState.CancellationTokenSource.IsCancellationRequested)
-            Environment.Exit(1);
-        else
-            Environment.Exit(0);
+        Environment.Exit(runner.AppState.CancellationTokenSource.IsCancellationRequested ? 1 : 0);
     }
 }

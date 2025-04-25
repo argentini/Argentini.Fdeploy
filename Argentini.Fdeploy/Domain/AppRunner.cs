@@ -1,3 +1,5 @@
+// ReSharper disable ConvertIfStatementToSwitchStatement
+
 using Argentini.Fdeploy.ConsoleBusy;
 using YamlDotNet.Serialization;
 
@@ -7,7 +9,7 @@ public sealed class AppRunner
 {
     #region Constants
 
-    public static int MaxConsoleWidth => GetMaxConsoleWidth();
+    private static int MaxConsoleWidth => GetMaxConsoleWidth();
 	
     private static int GetMaxConsoleWidth()
     {
@@ -21,7 +23,7 @@ public sealed class AppRunner
         }
     }
 
-    public static string CliErrorPrefix => "  • ";
+    private static string CliErrorPrefix => "  • ";
 
     #endregion
 
@@ -35,14 +37,14 @@ public sealed class AppRunner
     
     #region App State Properties
 
-    public List<string> CliArguments { get; } = [];
+    private List<string> CliArguments { get; } = [];
     public AppState AppState { get; } = new();
 
     #endregion
     
     #region Properties
-    
-    public Stopwatch Timer { get; } = new();
+
+    private Stopwatch Timer { get; } = new();
 
     #endregion
     
@@ -83,18 +85,15 @@ public sealed class AppRunner
             }
             else
             {
-                if (projectFilePath.EndsWith(".yml", StringComparison.OrdinalIgnoreCase))
-                    AppState.YamlProjectFilePath = Path.Combine(Directory.GetCurrentDirectory(), projectFilePath);
-                else
-                    AppState.YamlProjectFilePath = Path.Combine(Directory.GetCurrentDirectory(), $"fdeploy-{projectFilePath}.yml");
+                AppState.YamlProjectFilePath = Path.Combine(Directory.GetCurrentDirectory(), projectFilePath.EndsWith(".yml", StringComparison.OrdinalIgnoreCase) ? projectFilePath : $"fdeploy-{projectFilePath}.yml");
             }
         }
 
         #if DEBUG
 
+        AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Fynydd-Website-2024/UmbracoCms", "fdeploy-staging.yml");
         //AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/PentecHealthWebsite/Tolnedra", "fdeploy-staging.yml");
-        //AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Fynydd-Website-2024/UmbracoCms", "fdeploy-staging.yml");
-        AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Coursabi/Coursabi.WebAPI", "fdeploy-staging.yml");
+        //AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Coursabi/Coursabi.WebAPI", "fdeploy-staging.yml");
         //AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Tolnedra2/UmbracoCms", "fdeploy-prod.yml");
         //AppState.YamlProjectFilePath = Path.Combine(@"c:\code\Fynydd-Website-2024\UmbracoCms", "fdeploy-staging.yml");
         
@@ -206,9 +205,9 @@ public sealed class AppRunner
         #endregion
     }
     
-    #region Embedded Resources 
-    
-    public async ValueTask<string> GetEmbeddedYamlPathAsync()
+    #region Embedded Resources
+
+    private async ValueTask<string> GetEmbeddedYamlPathAsync()
     {
         var workingPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
 
@@ -245,7 +244,7 @@ public sealed class AppRunner
         return workingPath;
     }
 
-    public async ValueTask<string> GetEmbeddedHtmlPathAsync()
+    private async ValueTask<string> GetEmbeddedHtmlPathAsync()
     {
         var workingPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
 
@@ -857,11 +856,10 @@ public sealed class AppRunner
                     else
                     {
                         var bps = totalBytes / Timer.Elapsed.TotalSeconds;
-                        
-                        if (filesCopied != 0)
-                            spinner.Text = $"{spinner.OriginalText} {filesCopied:N0} {filesCopied.Pluralize("file", "files")} copied ({Timer.Elapsed.FormatElapsedTime()}, {bps.FormatBytes()}/sec)... Success!";
-                        else
-                            spinner.Text = $"{spinner.OriginalText} Nothing to copy... Success!";
+
+                        spinner.Text = filesCopied != 0 ? 
+                            $"{spinner.OriginalText} {filesCopied:N0} {filesCopied.Pluralize("file", "files")} copied ({Timer.Elapsed.FormatElapsedTime()}, {bps.FormatBytes()}/sec)... Success!" : 
+                            $"{spinner.OriginalText} Nothing to copy... Success!";
                     }
 
                     await Task.CompletedTask;
