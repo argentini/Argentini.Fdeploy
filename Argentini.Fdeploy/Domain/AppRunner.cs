@@ -91,11 +91,11 @@ public sealed class AppRunner
 
         #if DEBUG
 
-        AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Fynydd-Website-2024/UmbracoCms", "fdeploy-staging.yml");
+        //AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Fynydd-Website-2024/UmbracoCms", "fdeploy-staging.yml");
         //AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/PentecHealthWebsite/Tolnedra", "fdeploy-staging.yml");
         //AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Coursabi/Coursabi.WebAPI", "fdeploy-staging.yml");
         //AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Tolnedra2/UmbracoCms", "fdeploy-prod.yml");
-        //AppState.YamlProjectFilePath = Path.Combine(@"c:\code\Fynydd-Website-2024\UmbracoCms", "fdeploy-staging.yml");
+        AppState.YamlProjectFilePath = Path.Combine(@"c:\code\Fynydd-Website-2024\UmbracoCms", "fdeploy-staging.yml");
         
         #endif
 
@@ -426,86 +426,247 @@ public sealed class AppRunner
         }
 
         #endregion
-        
-        #region Delete Publish Folder
 
-        if (Directory.Exists(AppState.PublishPath))
+        try
         {
-            Timer.Restart();
+            #region Delete Publish Folder
 
-            await Spinner.StartAsync("Delete existing publish folder...", async spinner =>
+            if (Directory.Exists(AppState.PublishPath))
             {
-                AppState.CurrentSpinner = spinner;
+                Timer.Restart();
 
-                var retries = AppState.Settings.RetryCount;
+                await Spinner.StartAsync("Delete existing publish folder...", async spinner =>
+                {
+                    AppState.CurrentSpinner = spinner;
 
-                if (retries < 0)
-                    retries = new Settings().RetryCount;
+                    var retries = AppState.Settings.RetryCount;
 
-                for (var x = 0; x < retries; x++)
+                    if (retries < 0)
+                        retries = new Settings().RetryCount;
+
+                    for (var x = 0; x < retries; x++)
+                    {
+                        try
+                        {
+                            Directory.Delete(AppState.PublishPath, true);
+                            break;
+                        }
+                        catch
+                        {
+                            for (var d = AppState.Settings.WriteRetryDelaySeconds; d >= 0; d--)
+                            {
+                                spinner.Text = $"{spinner.OriginalText} Retry {x + 1}";
+                                Thread.Sleep(1000);
+                            }
+                        }
+                    }
+
+                    if (AppState.CancellationTokenSource.IsCancellationRequested)
+                    {
+                        spinner.Fail($"{spinner.OriginalText} Failed!");
+                        return;
+                    }
+
+                    spinner.Text = $"{spinner.RootText} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                    
+                    await Task.CompletedTask;
+
+                }, Patterns.Dots, Patterns.Line);
+            }
+
+            #endregion
+
+            #region Purge Bin Folder
+
+            if (AppState.Settings.PurgeProject && Directory.Exists(AppState.ProjectBinPath))
+            {
+                Timer.Restart();
+                
+                await Spinner.StartAsync("Purge bin folder...", async spinner =>
+                {
+                    AppState.CurrentSpinner = spinner;
+
+                    var retries = AppState.Settings.RetryCount;
+
+                    if (retries < 0)
+                        retries = new Settings().RetryCount;
+
+                    for (var x = 0; x < retries; x++)
+                    {
+                        try
+                        {
+                            Directory.Delete(AppState.ProjectBinPath, true);
+                            Directory.CreateDirectory(AppState.ProjectBinPath);
+                            break;
+                        }
+                        catch
+                        {
+                            for (var d = AppState.Settings.WriteRetryDelaySeconds; d >= 0; d--)
+                            {
+                                spinner.Text = $"{spinner.OriginalText} Retry {x + 1}";
+                                Thread.Sleep(1000);
+                            }
+                        }
+                    }
+
+                    if (AppState.CancellationTokenSource.IsCancellationRequested)
+                    {
+                        spinner.Fail($"{spinner.OriginalText} Failed!");
+                        return;
+                    }
+
+                    spinner.Text = $"{spinner.RootText} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                    
+                    await Task.CompletedTask;
+
+                }, Patterns.Dots, Patterns.Line);
+            }
+
+            #endregion
+
+            #region Purge Obj Folder
+
+            if (AppState.Settings.PurgeProject && Directory.Exists(AppState.ProjectObjPath))
+            {
+                Timer.Restart();
+                
+                await Spinner.StartAsync("Purge obj folder...", async spinner =>
+                {
+                    AppState.CurrentSpinner = spinner;
+
+                    var retries = AppState.Settings.RetryCount;
+
+                    if (retries < 0)
+                        retries = new Settings().RetryCount;
+
+                    for (var x = 0; x < retries; x++)
+                    {
+                        try
+                        {
+                            Directory.Delete(AppState.ProjectObjPath, true);
+                            Directory.CreateDirectory(AppState.ProjectObjPath);
+                            break;
+                        }
+                        catch
+                        {
+                            for (var d = AppState.Settings.WriteRetryDelaySeconds; d >= 0; d--)
+                            {
+                                spinner.Text = $"{spinner.OriginalText} Retry {x + 1}";
+                                Thread.Sleep(1000);
+                            }
+                        }
+                    }
+
+                    if (AppState.CancellationTokenSource.IsCancellationRequested)
+                    {
+                        spinner.Fail($"{spinner.OriginalText} Failed!");
+                        return;
+                    }
+
+                    spinner.Text = $"{spinner.RootText} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+                    
+                    await Task.CompletedTask;
+
+                }, Patterns.Dots, Patterns.Line);
+            }
+
+            #endregion
+
+            #region Clean Project
+
+            if (AppState.Settings.CleanProject)
+            {
+                await Spinner.StartAsync($"Clean & restore project {AppState.Settings.Project.ProjectFileName}...", async spinner =>
                 {
                     try
                     {
-                        Directory.Delete(AppState.PublishPath, true);
-                        break;
-                    }
-                    catch
-                    {
-                        for (var d = AppState.Settings.WriteRetryDelaySeconds; d >= 0; d--)
+                        Timer.Restart();
+
+                        var cmd = Cli.Wrap("dotnet")
+                            .WithArguments(["restore", $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{AppState.Settings.Project.ProjectFilePath}"])
+                            .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
+                            .WithStandardErrorPipe(PipeTarget.Null);
+                        
+                        var result = await cmd.ExecuteAsync();
+
+                        if (result.IsSuccess == false)
                         {
-                            spinner.Text = $"{spinner.OriginalText} Retry {x + 1}";
-                            Thread.Sleep(1000);
+                            spinner.Fail($"{spinner.OriginalText} Failed!");
+                            AppState.Exceptions.Add($"Could not restore project packages; exit code: {result.ExitCode}");
+                            await AppState.CancellationTokenSource.CancelAsync();
+                            return;
                         }
+                        
+                        cmd = Cli.Wrap("dotnet")
+                            .WithArguments(["clean", $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{AppState.Settings.Project.ProjectFilePath}"])
+                            .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
+                            .WithStandardErrorPipe(PipeTarget.Null);
+                        
+                        result = await cmd.ExecuteAsync();
+
+                        if (result.IsSuccess == false)
+                        {
+                            spinner.Fail($"{spinner.OriginalText} Failed!");
+                            AppState.Exceptions.Add($"Could not clean the project; exit code: {result.ExitCode}");
+                            await AppState.CancellationTokenSource.CancelAsync();
+                            return;
+                        }
+                        
+                        spinner.Text = $"{spinner.RootText} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
                     }
-                }
+                    catch (Exception e)
+                    {
+                        spinner.Fail($"{spinner.OriginalText}... Failed!");
+                        AppState.Exceptions.Add($"Could not clean the project; {e.Message}");
+                        await AppState.CancellationTokenSource.CancelAsync();
+                    }
+                    
+                }, Patterns.Dots, Patterns.Line);
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
-                {
-                    spinner.Fail($"{spinner.OriginalText} Failed!");
                     return;
-                }
+            }
 
-                spinner.Text = $"{spinner.RootText} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-                
-                await Task.CompletedTask;
+            #endregion
 
-            }, Patterns.Dots, Patterns.Line);
-        }
-
-        #endregion
-
-        #region Clean Project
-
-        if (AppState.Settings.CleanProject)
-        {
-            await Spinner.StartAsync($"Clean project {AppState.Settings.Project.ProjectFileName}...", async spinner =>
+            #region Publish Project
+            
+            await Spinner.StartAsync($"Publishing project {AppState.Settings.Project.ProjectFileName}...", async spinner =>
             {
                 try
                 {
                     Timer.Restart();
 
+                    var additionalParams = AppState.Settings.Project.PublishParameters.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+                    var cliParams = new List<string>
+                    {
+                        "publish", "--framework", $"net{AppState.Settings.Project.TargetFramework:N1}", $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{AppState.Settings.Project.ProjectFilePath}", "-c", AppState.Settings.Project.BuildConfiguration, "-o", AppState.PublishPath, $"/p:EnvironmentName={AppState.Settings.Project.EnvironmentName}"
+                    };
+
+                    cliParams.AddRange(additionalParams);
+                    
                     var cmd = Cli.Wrap("dotnet")
-                        .WithArguments(["clean", $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{AppState.Settings.Project.ProjectFilePath}"])
+                        .WithArguments(cliParams)
                         .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
                         .WithStandardErrorPipe(PipeTarget.Null);
-                    
+		        
                     var result = await cmd.ExecuteAsync();
 
                     if (result.IsSuccess == false)
                     {
                         spinner.Fail($"{spinner.OriginalText} Failed!");
-                        AppState.Exceptions.Add($"Could not clean the project; exit code: {result.ExitCode}");
+                        AppState.Exceptions.Add($"Could not publish the project; exit code: {result.ExitCode}");
                         await AppState.CancellationTokenSource.CancelAsync();
                         return;
                     }
-                    
+
                     spinner.Text = $"{spinner.RootText} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
                 }
 
                 catch (Exception e)
                 {
-                    spinner.Fail($"{spinner.OriginalText}... Failed!");
-                    AppState.Exceptions.Add($"Could not clean the project; {e.Message}");
+                    spinner.Fail($"{spinner.OriginalText} Failed!");
+                    AppState.Exceptions.Add($"Could not publish the project; {e.Message}");
                     await AppState.CancellationTokenSource.CancelAsync();
                 }
                 
@@ -513,268 +674,121 @@ public sealed class AppRunner
 
             if (AppState.CancellationTokenSource.IsCancellationRequested)
                 return;
-        }
 
-        #endregion
-
-        #region Purge Bin Folder
-
-        if (AppState.Settings.PurgeProject && Directory.Exists(AppState.ProjectBinPath))
-        {
-            Timer.Restart();
+            #endregion
             
-            await Spinner.StartAsync("Purge bin folder...", async spinner =>
+            #region Copy Additional Files Into Publish Folder
+
+            if (AppState.Settings.Project.CopyFilesToPublishFolder.Count != 0)
             {
-                AppState.CurrentSpinner = spinner;
-
-                var retries = AppState.Settings.RetryCount;
-
-                if (retries < 0)
-                    retries = new Settings().RetryCount;
-
-                for (var x = 0; x < retries; x++)
+                await Spinner.StartAsync("Adding files to publish folder...", async spinner =>
                 {
-                    try
+                    Timer.Restart();
+                    
+                    foreach (var item in AppState.Settings.Project.CopyFilesToPublishFolder)
                     {
-                        Directory.Delete(AppState.ProjectBinPath, true);
-                        Directory.CreateDirectory(AppState.ProjectBinPath);
-                        break;
-                    }
-                    catch
-                    {
-                        for (var d = AppState.Settings.WriteRetryDelaySeconds; d >= 0; d--)
+                        var sourceFilePath = $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{item}";
+                        var destFilePath = $"{AppState.PublishPath}{Path.DirectorySeparatorChar}{item}";
+                        var destParentPath = destFilePath.TrimEnd(item.GetLastPathSegment()) ?? string.Empty;
+                        
+                        if (AppState.CancellationTokenSource.IsCancellationRequested)
+                            break;
+                        
+                        try
                         {
-                            spinner.Text = $"{spinner.OriginalText} Retry {x + 1}";
-                            Thread.Sleep(1000);
+                            Timer.Restart();
+
+                            if (Directory.Exists(destParentPath) == false)
+                                Directory.CreateDirectory(destParentPath);
+                            
+                            File.Copy(sourceFilePath, destFilePath, true);
+                            
+                            spinner.Text = $"{spinner.OriginalText} {item.GetLastPathSegment()}...";
+
+                            await Task.Delay(5);
+                        }
+
+                        catch
+                        {
+                            spinner.Fail($"{spinner.OriginalText} {item.GetLastPathSegment()}... Failed!");
+                            AppState.Exceptions.Add($"Could not add file `{sourceFilePath} => {destFilePath}`");
+                            await AppState.CancellationTokenSource.CancelAsync();
                         }
                     }
-                }
+
+                    if (AppState.CancellationTokenSource.IsCancellationRequested == false)
+                        spinner.Text = $"{spinner.OriginalText} {AppState.Settings.Project.CopyFilesToPublishFolder.Count:N0} {AppState.Settings.Project.CopyFilesToPublishFolder.Count.Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+
+                }, Patterns.Dots, Patterns.Line);
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
-                {
-                    spinner.Fail($"{spinner.OriginalText} Failed!");
                     return;
-                }
-
-                spinner.Text = $"{spinner.RootText} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-                
-                await Task.CompletedTask;
-
-            }, Patterns.Dots, Patterns.Line);
-        }
-
-        #endregion
-
-        #region Purge Obj Folder
-
-        if (AppState.Settings.PurgeProject && Directory.Exists(AppState.ProjectObjPath))
-        {
-            Timer.Restart();
+            }
             
-            await Spinner.StartAsync("Purge obj folder...", async spinner =>
+            #endregion
+            
+            #region Copy Additional Folders Into Publish Folder
+            
+            if (AppState.Settings.Project.CopyFoldersToPublishFolder.Count != 0)
             {
-                AppState.CurrentSpinner = spinner;
-
-                var retries = AppState.Settings.RetryCount;
-
-                if (retries < 0)
-                    retries = new Settings().RetryCount;
-
-                for (var x = 0; x < retries; x++)
+                await Spinner.StartAsync("Adding folders to publish folder...", async spinner =>
                 {
-                    try
+                    Timer.Restart();
+                    
+                    foreach (var item in AppState.Settings.Project.CopyFoldersToPublishFolder)
                     {
-                        Directory.Delete(AppState.ProjectObjPath, true);
-                        Directory.CreateDirectory(AppState.ProjectObjPath);
-                        break;
-                    }
-                    catch
-                    {
-                        for (var d = AppState.Settings.WriteRetryDelaySeconds; d >= 0; d--)
+                        if (AppState.CancellationTokenSource.IsCancellationRequested)
+                            break;
+                        
+                        try
                         {
-                            spinner.Text = $"{spinner.OriginalText} Retry {x + 1}";
-                            Thread.Sleep(1000);
+                            Timer.Restart();
+
+                            await Storage.CopyLocalFolderAsync(AppState, $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{item}", $"{AppState.PublishPath}{Path.DirectorySeparatorChar}{item}");
+
+                            spinner.Text = $"{spinner.OriginalText} {item.GetLastPathSegment()}...";
+                            await Task.Delay(5);
+                        }
+
+                        catch
+                        {
+                            spinner.Fail($"{spinner.OriginalText} {item.GetLastPathSegment()}... Failed!");
+                            AppState.Exceptions.Add($"Could not add folder `{item}`");
+                            await AppState.CancellationTokenSource.CancelAsync();
                         }
                     }
-                }
+
+                    if (AppState.CancellationTokenSource.IsCancellationRequested == false)
+                        spinner.Text = $"{spinner.OriginalText} {AppState.Settings.Project.CopyFoldersToPublishFolder.Count:N0} {AppState.Settings.Project.CopyFoldersToPublishFolder.Count.Pluralize("folder", "folders")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+
+                }, Patterns.Dots, Patterns.Line);
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
-                {
-                    spinner.Fail($"{spinner.OriginalText} Failed!");
                     return;
-                }
-
-                spinner.Text = $"{spinner.RootText} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-                
-                await Task.CompletedTask;
-
-            }, Patterns.Dots, Patterns.Line);
-        }
-
-        #endregion
-        
-        #region Publish Project
-        
-        await Spinner.StartAsync($"Publishing project {AppState.Settings.Project.ProjectFileName}...", async spinner =>
-        {
-            try
-            {
-                Timer.Restart();
-
-                var additionalParams = AppState.Settings.Project.PublishParameters.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
-                var cliParams = new List<string>
-                {
-                    "publish", "--framework", $"net{AppState.Settings.Project.TargetFramework:N1}", $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{AppState.Settings.Project.ProjectFilePath}", "-c", AppState.Settings.Project.BuildConfiguration, "-o", AppState.PublishPath, $"/p:EnvironmentName={AppState.Settings.Project.EnvironmentName}"
-                };
-
-                cliParams.AddRange(additionalParams);
-                
-                var cmd = Cli.Wrap("dotnet")
-                    .WithArguments(cliParams)
-                    .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
-                    .WithStandardErrorPipe(PipeTarget.Null);
-		    
-                var result = await cmd.ExecuteAsync();
-
-                if (result.IsSuccess == false)
-                {
-                    spinner.Fail($"{spinner.OriginalText} Failed!");
-                    AppState.Exceptions.Add($"Could not publish the project; exit code: {result.ExitCode}");
-                    await AppState.CancellationTokenSource.CancelAsync();
-                    return;
-                }
-
-                spinner.Text = $"{spinner.RootText} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-            }
-
-            catch (Exception e)
-            {
-                spinner.Fail($"{spinner.OriginalText} Failed!");
-                AppState.Exceptions.Add($"Could not publish the project; {e.Message}");
-                await AppState.CancellationTokenSource.CancelAsync();
             }
             
-        }, Patterns.Dots, Patterns.Line);
+            #endregion
+            
+            #region Index Local Files
 
-        if (AppState.CancellationTokenSource.IsCancellationRequested)
-            return;
-
-        #endregion
-        
-        #region Copy Additional Files Into Publish Folder
-
-        if (AppState.Settings.Project.CopyFilesToPublishFolder.Count != 0)
-        {
-            await Spinner.StartAsync("Adding files to publish folder...", async spinner =>
+            await Spinner.StartAsync("Indexing local files...", async spinner =>
             {
                 Timer.Restart();
                 
-                foreach (var item in AppState.Settings.Project.CopyFilesToPublishFolder)
-                {
-                    var sourceFilePath = $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{item}";
-                    var destFilePath = $"{AppState.PublishPath}{Path.DirectorySeparatorChar}{item}";
-                    var destParentPath = destFilePath.TrimEnd(item.GetLastPathSegment()) ?? string.Empty;
-                    
-                    if (AppState.CancellationTokenSource.IsCancellationRequested)
-                        break;
-                    
-                    try
-                    {
-                        Timer.Restart();
+                await Storage.RecurseLocalPathAsync(AppState, AppState.PublishPath);
 
-                        if (Directory.Exists(destParentPath) == false)
-                            Directory.CreateDirectory(destParentPath);
-                        
-                        File.Copy(sourceFilePath, destFilePath, true);
-                        
-                        spinner.Text = $"{spinner.OriginalText} {item.GetLastPathSegment()}...";
-
-                        await Task.Delay(5);
-                    }
-
-                    catch
-                    {
-                        spinner.Fail($"{spinner.OriginalText} {item.GetLastPathSegment()}... Failed!");
-                        AppState.Exceptions.Add($"Could not add file `{sourceFilePath} => {destFilePath}`");
-                        await AppState.CancellationTokenSource.CancelAsync();
-                    }
-                }
-
-                if (AppState.CancellationTokenSource.IsCancellationRequested == false)
-                    spinner.Text = $"{spinner.OriginalText} {AppState.Settings.Project.CopyFilesToPublishFolder.Count:N0} {AppState.Settings.Project.CopyFilesToPublishFolder.Count.Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-
-            }, Patterns.Dots, Patterns.Line);
-
-            if (AppState.CancellationTokenSource.IsCancellationRequested)
-                return;
-        }
-        
-        #endregion
-        
-        #region Copy Additional Folders Into Publish Folder
-        
-        if (AppState.Settings.Project.CopyFoldersToPublishFolder.Count != 0)
-        {
-            await Spinner.StartAsync("Adding folders to publish folder...", async spinner =>
-            {
-                Timer.Restart();
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                    spinner.Fail($"{spinner.OriginalText} Failed!");
+                else        
+                    spinner.Text = $"{spinner.OriginalText} {AppState.LocalFiles.Count(f => f.IsFile):N0} {AppState.LocalFiles.Count(f => f.IsFile).Pluralize("file", "files")}, {AppState.LocalFiles.Count(f => f.IsFolder):N0} {AppState.LocalFiles.Count(f => f.IsFolder).Pluralize("folder", "folders")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
                 
-                foreach (var item in AppState.Settings.Project.CopyFoldersToPublishFolder)
-                {
-                    if (AppState.CancellationTokenSource.IsCancellationRequested)
-                        break;
-                    
-                    try
-                    {
-                        Timer.Restart();
-
-                        await Storage.CopyLocalFolderAsync(AppState, $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{item}", $"{AppState.PublishPath}{Path.DirectorySeparatorChar}{item}");
-
-                        spinner.Text = $"{spinner.OriginalText} {item.GetLastPathSegment()}...";
-                        await Task.Delay(5);
-                    }
-
-                    catch
-                    {
-                        spinner.Fail($"{spinner.OriginalText} {item.GetLastPathSegment()}... Failed!");
-                        AppState.Exceptions.Add($"Could not add folder `{item}`");
-                        await AppState.CancellationTokenSource.CancelAsync();
-                    }
-                }
-
-                if (AppState.CancellationTokenSource.IsCancellationRequested == false)
-                    spinner.Text = $"{spinner.OriginalText} {AppState.Settings.Project.CopyFoldersToPublishFolder.Count:N0} {AppState.Settings.Project.CopyFoldersToPublishFolder.Count.Pluralize("folder", "folders")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-
             }, Patterns.Dots, Patterns.Line);
-
+           
             if (AppState.CancellationTokenSource.IsCancellationRequested)
                 return;
-        }
-        
-        #endregion
-        
-        #region Index Local Files
-
-        await Spinner.StartAsync("Indexing local files...", async spinner =>
-        {
-            Timer.Restart();
             
-            await Storage.RecurseLocalPathAsync(AppState, AppState.PublishPath);
+            #endregion
 
-            if (AppState.CancellationTokenSource.IsCancellationRequested)
-                spinner.Fail($"{spinner.OriginalText} Failed!");
-            else        
-                spinner.Text = $"{spinner.OriginalText} {AppState.LocalFiles.Count(f => f.IsFile):N0} {AppState.LocalFiles.Count(f => f.IsFile).Pluralize("file", "files")}, {AppState.LocalFiles.Count(f => f.IsFolder):N0} {AppState.LocalFiles.Count(f => f.IsFolder).Pluralize("folder", "folders")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-            
-        }, Patterns.Dots, Patterns.Line);
-       
-        if (AppState.CancellationTokenSource.IsCancellationRequested)
-            return;
-        
-        #endregion
-
-        try
-        {
             #region Deploy Files While Online
 
             if (AppState.Settings.Paths.OnlineCopyFolderPaths.Count > 0 || AppState.Settings.Paths.OnlineCopyFilePaths.Count > 0)
