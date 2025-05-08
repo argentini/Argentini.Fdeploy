@@ -196,6 +196,14 @@ public static class Network
             do
             {
                 var cmdResult = await Cli.Wrap("powershell")
+                    .WithArguments(["net", "use", $"{appState.Settings.WindowsMountLetter}:"])
+                    .WithValidation(CommandResultValidation.None)
+                    .ExecuteBufferedAsync();
+
+                if (cmdResult.IsSuccess == false)
+                    return true;
+                
+                cmdResult = await Cli.Wrap("powershell")
                     .WithArguments(["net", "use", $"{appState.Settings.WindowsMountLetter}:", "/delete", "/y"])
                     .WithValidation(CommandResultValidation.None)
                     .ExecuteBufferedAsync();
