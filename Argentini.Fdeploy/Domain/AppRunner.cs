@@ -449,7 +449,9 @@ public sealed class AppRunner
                         try
                         {
                             Directory.Delete(AppState.PublishPath, true);
-                            break;
+                            
+                            if (Directory.Exists(AppState.PublishPath) == false)
+                                break;
                         }
                         catch
                         {

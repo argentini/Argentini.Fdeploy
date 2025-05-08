@@ -17,6 +17,8 @@ public static class Network
     
     public static async Task<bool> ConnectNetworkShareAsync(this AppState appState)
     {
+        await appState.DisconnectNetworkShareAsync();
+        
         if (Identify.GetOsPlatform() == OSPlatform.OSX)
         {
             if (appState.CancellationTokenSource.IsCancellationRequested)
@@ -25,29 +27,54 @@ public static class Network
             var mountScript =
                 $"""
                 tell application "Finder"
-                    if (exists disk "{appState.Settings.ServerConnection.ShareName}") then
-                        try
-                            eject "{appState.Settings.ServerConnection.ShareName}"
-                        end try
-                    end if
                     mount volume "smb://{(string.IsNullOrEmpty(appState.Settings.ServerConnection.Domain) ? "" : appState.Settings.ServerConnection.Domain + ";")}{appState.Settings.ServerConnection.UserName}:{appState.Settings.ServerConnection.Password}@{appState.Settings.ServerConnection.ServerAddress}/{appState.Settings.ServerConnection.ShareName}"
                 end tell
                 """;
 
-            await File.WriteAllTextAsync(appState.AppleScriptPath, mountScript);
-            
-            var cmdResult = await Cli.Wrap("osascript")
-                .WithArguments([appState.AppleScriptPath])
-                .WithValidation(CommandResultValidation.None)
-                .ExecuteBufferedAsync();
-            
-            if (File.Exists(appState.AppleScriptPath))
-                File.Delete(appState.AppleScriptPath);
+            do
+            {
+                if (File.Exists(appState.AppleScriptPath) == false)
+                    await File.WriteAllTextAsync(appState.AppleScriptPath, mountScript);
+                
+                if (File.Exists(appState.AppleScriptPath) == false)
+                    await Task.Delay(1000, appState.CancellationTokenSource.Token);
 
-            if (cmdResult.IsSuccess)
+            } while (File.Exists(appState.AppleScriptPath) == false && appState.CancellationTokenSource.IsCancellationRequested == false);
+            
+            // ReSharper disable once RedundantAssignment
+            var result = false;
+
+            do
+            {
+                var cmdResult = await Cli.Wrap("osascript")
+                    .WithArguments([appState.AppleScriptPath])
+                    .WithValidation(CommandResultValidation.None)
+                    .ExecuteBufferedAsync();
+
+                result = cmdResult.IsSuccess;
+
+                if (result)
+                    break;
+
+                await Task.Delay(appState.Settings.WriteRetryDelaySeconds * 1000, appState.CancellationTokenSource.Token);
+
+            } while (result == false && appState.CancellationTokenSource.IsCancellationRequested == false);
+
+            do
+            {
+                if (File.Exists(appState.AppleScriptPath))
+                    File.Delete(appState.AppleScriptPath);
+
+                if (File.Exists(appState.AppleScriptPath))
+                    await Task.Delay(1000, appState.CancellationTokenSource.Token);
+
+            } while (File.Exists(appState.AppleScriptPath) && appState.CancellationTokenSource.IsCancellationRequested == false);
+                    
+            if (result)
                 return true;
             
             appState.Exceptions.Add($"Could not mount network share `{appState.Settings.ServerConnection.ServerAddress}/{appState.Settings.ServerConnection.ShareName}`");
+
             await appState.CancellationTokenSource.CancelAsync();
 
             return false;
@@ -63,13 +90,6 @@ public static class Network
 
             do
             {
-                await Cli.Wrap("powershell")
-                    .WithArguments(["net", "use", $"{appState.Settings.WindowsMountLetter}:", "/delete", "/y"])
-                    .WithValidation(CommandResultValidation.None)
-                    .ExecuteBufferedAsync();
-
-                await Task.Delay(1000, appState.CancellationTokenSource.Token);
-
                 var cmdResult = await Cli.Wrap("powershell")
                     .WithArguments([
                         "net", "use", $"{appState.Settings.WindowsMountLetter}:",
@@ -120,32 +140,76 @@ public static class Network
                 end tell
                 """;
 
-            await File.WriteAllTextAsync(appState.AppleScriptPath, ejectScript);
-            
-            var cmdResult = await Cli.Wrap("osascript")
-                .WithArguments([appState.AppleScriptPath])
-                .WithValidation(CommandResultValidation.None)
-                .ExecuteBufferedAsync();
+            do
+            {
+                if (File.Exists(appState.AppleScriptPath) == false)
+                    await File.WriteAllTextAsync(appState.AppleScriptPath, ejectScript);
+                
+                if (File.Exists(appState.AppleScriptPath) == false)
+                    await Task.Delay(1000, appState.CancellationTokenSource.Token);
 
-            if (File.Exists(appState.AppleScriptPath))
-                File.Delete(appState.AppleScriptPath);
+            } while (File.Exists(appState.AppleScriptPath) == false && appState.CancellationTokenSource.IsCancellationRequested == false);
 
-            if (cmdResult.IsSuccess)
+            // ReSharper disable once RedundantAssignment
+            var result = false;
+
+            do
+            {
+                var cmdResult = await Cli.Wrap("osascript")
+                    .WithArguments([appState.AppleScriptPath])
+                    .WithValidation(CommandResultValidation.None)
+                    .ExecuteBufferedAsync();
+
+                result = cmdResult.IsSuccess;
+
+                if (result)
+                    break;
+
+                await Task.Delay(appState.Settings.WriteRetryDelaySeconds * 1000, appState.CancellationTokenSource.Token);
+
+            } while (result == false && appState.CancellationTokenSource.IsCancellationRequested == false);
+
+            do
+            {
+                if (File.Exists(appState.AppleScriptPath))
+                    File.Delete(appState.AppleScriptPath);
+
+                if (File.Exists(appState.AppleScriptPath))
+                    await Task.Delay(1000, appState.CancellationTokenSource.Token);
+
+            } while (File.Exists(appState.AppleScriptPath) && appState.CancellationTokenSource.IsCancellationRequested == false);
+                    
+            if (result)
                 return true;
             
             appState.Exceptions.Add($"Could not unmount `{appState.Settings.ServerConnection.ServerAddress}/{appState.Settings.ServerConnection.ShareName}`");
             await appState.CancellationTokenSource.CancelAsync();
+
             return false;
         }
 
         if (Identify.GetOsPlatform() == OSPlatform.Windows)
         {
-            var cmdResult = await Cli.Wrap("powershell")
-                .WithArguments(["net", "use", $"{appState.Settings.WindowsMountLetter}:", "/delete", "/y"])
-                .WithValidation(CommandResultValidation.None)
-                .ExecuteBufferedAsync();
+            // ReSharper disable once RedundantAssignment
+            var result = false;
 
-            if (cmdResult.IsSuccess)
+            do
+            {
+                var cmdResult = await Cli.Wrap("powershell")
+                    .WithArguments(["net", "use", $"{appState.Settings.WindowsMountLetter}:", "/delete", "/y"])
+                    .WithValidation(CommandResultValidation.None)
+                    .ExecuteBufferedAsync();
+
+                result = cmdResult.IsSuccess;
+
+                if (result)
+                    return true;
+
+                await Task.Delay(appState.Settings.WriteRetryDelaySeconds * 1000, appState.CancellationTokenSource.Token);
+
+            } while (result == false && appState.CancellationTokenSource.IsCancellationRequested == false);
+            
+            if (result)
                 return true;
             
             appState.Exceptions.Add($@"Could not unmount network share \\{appState.Settings.ServerConnection.ServerAddress}\{appState.Settings.ServerConnection.ShareName}");
