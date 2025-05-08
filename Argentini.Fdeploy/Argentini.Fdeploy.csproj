@@ -6,9 +6,9 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
 
-        <AssemblyVersion>1.3.3.0</AssemblyVersion>
-        <FileVersion>1.3.3.0</FileVersion>
-        <PackageVersion>1.3.3</PackageVersion>
+        <AssemblyVersion>1.3.4.0</AssemblyVersion>
+        <FileVersion>1.3.4.0</FileVersion>
+        <PackageVersion>1.3.4</PackageVersion>
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>fdeploy</ToolCommandName>
         <PackageOutputPath>./nupkg</PackageOutputPath>
@@ -27,7 +27,7 @@
         <PackageProjectUrl>https://github.com/argentini/Argentini.Fdeploy</PackageProjectUrl>
         <RepositoryUrl>https://github.com/argentini/Argentini.Fdeploy</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
-        <PackageReleaseNotes>Updated dependencies, bin/obj now purged before clean, clean now first restores the project, mounted share is disconnected even if the app aborts</PackageReleaseNotes>
+        <PackageReleaseNotes>Network share mount now retries</PackageReleaseNotes>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
         <PackageIcon>fdeploy-icon.png</PackageIcon>

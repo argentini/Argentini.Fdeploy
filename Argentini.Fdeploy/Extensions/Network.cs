@@ -49,27 +49,51 @@ public static class Network
             
             appState.Exceptions.Add($"Could not mount network share `{appState.Settings.ServerConnection.ServerAddress}/{appState.Settings.ServerConnection.ShareName}`");
             await appState.CancellationTokenSource.CancelAsync();
+
             return false;
         }
 
         if (Identify.GetOsPlatform() == OSPlatform.Windows)
         {
-            await Cli.Wrap("powershell")
-                .WithArguments(["net", "use", $"{appState.Settings.WindowsMountLetter}:", "/delete", "/y"])
-                .WithValidation(CommandResultValidation.None)
-                .ExecuteBufferedAsync();
-            
-            var cmdResult = await Cli.Wrap("powershell")
-                .WithArguments(["net", "use", $"{appState.Settings.WindowsMountLetter}:", $@"\\{appState.Settings.ServerConnection.ServerAddress}\{appState.Settings.ServerConnection.ShareName}", $"/user:{(string.IsNullOrEmpty(appState.Settings.ServerConnection.Domain) ? string.Empty : $@"{appState.Settings.ServerConnection.Domain}\")}{appState.Settings.ServerConnection.UserName}", appState.Settings.ServerConnection.Password])
-                .WithValidation(CommandResultValidation.None)
-                .ExecuteBufferedAsync();
+            if (appState.CancellationTokenSource.IsCancellationRequested)
+                return false;
 
-            //var cl = $@"net use {appState.Settings.WindowsMountLetter}: \\{appState.Settings.ServerConnection.ServerAddress}\{appState.Settings.ServerConnection.ShareName} /user:{(string.IsNullOrEmpty(appState.Settings.ServerConnection.Domain) ? string.Empty : $@"{appState.Settings.ServerConnection.Domain}\")}{appState.Settings.ServerConnection.UserName} {appState.Settings.ServerConnection.Password}";
+            // ReSharper disable once RedundantAssignment
+            var result = false;
+
+            do
+            {
+                await Cli.Wrap("powershell")
+                    .WithArguments(["net", "use", $"{appState.Settings.WindowsMountLetter}:", "/delete", "/y"])
+                    .WithValidation(CommandResultValidation.None)
+                    .ExecuteBufferedAsync();
+
+                await Task.Delay(1000, appState.CancellationTokenSource.Token);
+
+                var cmdResult = await Cli.Wrap("powershell")
+                    .WithArguments([
+                        "net", "use", $"{appState.Settings.WindowsMountLetter}:",
+                        $@"\\{appState.Settings.ServerConnection.ServerAddress}\{appState.Settings.ServerConnection.ShareName}",
+                        $"/user:{(string.IsNullOrEmpty(appState.Settings.ServerConnection.Domain) ? string.Empty : $@"{appState.Settings.ServerConnection.Domain}\")}{appState.Settings.ServerConnection.UserName}",
+                        appState.Settings.ServerConnection.Password
+                    ])
+                    .WithValidation(CommandResultValidation.None)
+                    .ExecuteBufferedAsync();
+
+                result = cmdResult.IsSuccess;
+
+                if (result)
+                    return true;
+
+                await Task.Delay(appState.Settings.WriteRetryDelaySeconds * 1000, appState.CancellationTokenSource.Token);
+
+            } while (result == false && appState.CancellationTokenSource.IsCancellationRequested == false);
             
-            if (cmdResult.IsSuccess)
+            if (result)
                 return true;
             
             appState.Exceptions.Add($@"Could not mount network share \\{appState.Settings.ServerConnection.ServerAddress}\{appState.Settings.ServerConnection.ShareName}");
+
             await appState.CancellationTokenSource.CancelAsync();
 
             return false;
@@ -77,6 +101,7 @@ public static class Network
 
         appState.Exceptions.Add("Unsupported platform");
         await appState.CancellationTokenSource.CancelAsync();
+
         return false;
     }
     
