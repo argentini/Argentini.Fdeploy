@@ -147,7 +147,7 @@ public sealed class AppRunner
             {
                 AppState.YamlCredsFilePath = string.Empty;
             }
-        }        
+        }
 
         if (AppState.YamlCredsFilePath != string.Empty)
         {
@@ -158,7 +158,13 @@ public sealed class AppRunner
             AppState.Settings.ServerConnection.Domain = credentials.Domain;
             AppState.Settings.ServerConnection.UserName = credentials.UserName;
             AppState.Settings.ServerConnection.Password = credentials.Password;
-        }        
+        }
+        else
+        {
+            AppState.Exceptions.Add("No credentials file was found");
+            AppState.CancellationTokenSource.Cancel();
+            return;
+        }
 
         #endregion
         
