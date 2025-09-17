@@ -1,4 +1,6 @@
-﻿namespace Argentini.Fdeploy;
+﻿using Spectre.Console;
+
+namespace Argentini.Fdeploy;
 
 internal abstract class Program
 {
@@ -14,30 +16,30 @@ internal abstract class Program
 
         if (runner.AppState.CancellationTokenSource.IsCancellationRequested)
         {
-            await runner.OutputExceptionsAsync();
+            runner.OutputExceptions();
         }
 
         await runner.DeployAsync();
         
         if (runner.AppState.CancellationTokenSource.IsCancellationRequested)
         {
-            await runner.OutputExceptionsAsync();
-            await Console.Out.WriteLineAsync();
+            runner.OutputExceptions();
+            AnsiConsole.MarkupLine(string.Empty);
         }
 
         else
         {
             if (runner is { VersionMode: false, HelpMode: false, InitMode: false })
             {
-                await Console.Out.WriteLineAsync();
-                await AppRunner.ColonOutAsync("Completed Deployment", $"{DateTime.Now:HH:mm:ss.fff}");
+                AnsiConsole.MarkupLine(string.Empty);
+                AppRunner.ColonOut("Completed Deployment", $"{DateTime.Now:HH:mm:ss.fff}");
             }
         }
         
         if (runner is { VersionMode: false, HelpMode: false, InitMode: false })
-            await AppRunner.ColonOutAsync("Total Run Time", $"{totalTimer.Elapsed.FormatElapsedTime()}");
+            AppRunner.ColonOut("Total Run Time", $"{totalTimer.Elapsed.FormatElapsedTime()}");
 
-        await Console.Out.WriteLineAsync();
+        AnsiConsole.MarkupLine(string.Empty);
 
         Environment.Exit(runner.AppState.CancellationTokenSource.IsCancellationRequested ? 1 : 0);
     }

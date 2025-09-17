@@ -1,4 +1,6 @@
-﻿namespace Argentini.Fdeploy.Extensions;
+﻿using Spectre.Console;
+
+namespace Argentini.Fdeploy.Extensions;
 
 /// <summary>
 /// Various tools for working with strings. 
@@ -911,9 +913,7 @@ public static class Strings
             result.AddRange(WrapTextAtMaxWidth(line, maxCharacters));
 
         foreach (var line in result)
-        {
-            Console.WriteLine(line.NormalizeLinebreaks(Environment.NewLine));
-        }
+	        AnsiConsole.MarkupLine(line.NormalizeLinebreaks(Environment.NewLine));
     }
     
     #endregion

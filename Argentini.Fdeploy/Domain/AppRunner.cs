@@ -1,7 +1,10 @@
 // ReSharper disable ConvertIfStatementToSwitchStatement
 
-using Argentini.Fdeploy.ConsoleBusy;
+using Spectre.Console;
 using YamlDotNet.Serialization;
+// ReSharper disable RedundantBoolCompare
+// ReSharper disable ForeachCanBePartlyConvertedToQueryUsingAnotherGetEnumerator
+// ReSharper disable AccessToModifiedClosure
 
 namespace Argentini.Fdeploy.Domain;
 
@@ -91,10 +94,10 @@ public sealed class AppRunner
 
         #if DEBUG
 
-        AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Fynydd-Website-2024/UmbracoCms", "fdeploy-staging.yml");
+        //AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Fynydd-Website-2024/UmbracoCms", "fdeploy-staging.yml");
         //AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/PentecHealthWebsite/Tolnedra", "fdeploy-staging.yml");
         //AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Coursabi/Coursabi.WebAPI", "fdeploy-staging.yml");
-        //AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Tolnedra2/UmbracoCms", "fdeploy-prod.yml");
+        AppState.YamlProjectFilePath = Path.Combine("/Users/magic/Developer/Tolnedra2/UmbracoCms", "fdeploy-prod.yml");
         //AppState.YamlProjectFilePath = Path.Combine(@"c:\code\Fynydd-Website-2024\UmbracoCms", "fdeploy-staging.yml");
         
         #endif
@@ -291,22 +294,19 @@ public sealed class AppRunner
     
     #region Console Output
     
-    public async ValueTask OutputExceptionsAsync()
+    public void OutputExceptions()
     {
         foreach (var message in AppState.Exceptions)
-            await Console.Out.WriteLineAsync($"{CliErrorPrefix}{message}");
+            AnsiConsole.MarkupLine($"[red]{CliErrorPrefix}{message}[/]");            
     }
 
-    public static async ValueTask ColonOutAsync(string topic, string message)
+    public static void ColonOut(string topic, string message)
     {
         const int maxTopicLength = 20;
 
-        if (topic.Length >= maxTopicLength)
-            await Console.Out.WriteAsync($"{topic[..maxTopicLength]}");
-        else
-            await Console.Out.WriteAsync($"{topic}{" ".Repeat(maxTopicLength - topic.Length)}");
-        
-        await Console.Out.WriteLineAsync($" : {message}");
+        AnsiConsole.MarkupLine(topic.Length >= maxTopicLength
+            ? $"{topic[..maxTopicLength]} : {message}"
+            : $"{topic}{" ".Repeat(maxTopicLength - topic.Length)} : {message}");
     }
     
     #endregion
@@ -317,18 +317,18 @@ public sealed class AppRunner
     {
         #region Process Modes
         
-		var version = await Identify.VersionAsync(System.Reflection.Assembly.GetExecutingAssembly());
+		var version = Identify.Version(System.Reflection.Assembly.GetExecutingAssembly());
         
 		if (VersionMode)
 		{
-			await Console.Out.WriteLineAsync($"Fdeploy Version {version}");
+            AnsiConsole.MarkupLine($"Fdeploy Version {version}");
 			return;
 		}
 		
-		await Console.Out.WriteLineAsync(Strings.ThickLine.Repeat(MaxConsoleWidth));
-		await Console.Out.WriteLineAsync("Fdeploy: Deploy .NET web applications using SMB on Linux, macOS, or Windows");
-		await Console.Out.WriteLineAsync($"Version {version} for {Identify.GetOsPlatformName()} (.NET {Identify.GetRuntimeVersion()}/{Identify.GetProcessorArchitecture()})");
-		await Console.Out.WriteLineAsync(Strings.ThickLine.Repeat(MaxConsoleWidth));
+		AnsiConsole.MarkupLine(Strings.ThickLine.Repeat(MaxConsoleWidth));
+        AnsiConsole.MarkupLine("Fdeploy: Deploy .NET web applications using SMB on Linux, macOS, or Windows");
+        AnsiConsole.MarkupLine($"Version {version} for {Identify.GetOsPlatformName()} (.NET {Identify.GetRuntimeVersion()}/{Identify.GetProcessorArchitecture()})");
+        AnsiConsole.MarkupLine(Strings.ThickLine.Repeat(MaxConsoleWidth));
 		
 		if (InitMode)
 		{
@@ -344,15 +344,15 @@ public sealed class AppRunner
             
             if (AppState.CancellationTokenSource.IsCancellationRequested == false)
             {
-			    await Console.Out.WriteLineAsync($"Created `fdeploy.yml` and `fdeploy-creds.yml` at {Directory.GetCurrentDirectory()}");
-			    await Console.Out.WriteLineAsync();
+                AnsiConsole.MarkupLine($"Created `fdeploy.yml` and `fdeploy-creds.yml` at {Directory.GetCurrentDirectory()}");
+                AnsiConsole.MarkupLine(string.Empty);
     			return;
             }
 		}
 		
 		else if (HelpMode)
 		{
-			await Console.Out.WriteLineAsync();
+            AnsiConsole.MarkupLine(string.Empty);
             
             const string helpText = """
                                     Fdeploy will look in the current working directory for a deployment file named `fdeploy.yml`._
@@ -381,21 +381,21 @@ public sealed class AppRunner
                                         """;
 
             helpText.WriteToConsole(80);
-            await Console.Out.WriteLineAsync(Strings.ThinLine.Repeat("Command Line Usage:".Length));
+            AnsiConsole.MarkupLine(Strings.ThinLine.Repeat("Command Line Usage:".Length));
             exampleText.WriteToConsole(80);
-            await Console.Out.WriteLineAsync(Strings.ThinLine.Repeat("Commands:".Length));
+            AnsiConsole.MarkupLine(Strings.ThinLine.Repeat("Commands:".Length));
             commandsText.WriteToConsole(80);
             
-			await Console.Out.WriteLineAsync();
+			AnsiConsole.MarkupLine(string.Empty);
 
 			return;
 		}
 
-        await ColonOutAsync("Destination", $"{AppState.Settings.ServerConnection.ServerAddress}{Path.DirectorySeparatorChar}{AppState.Settings.ServerConnection.ShareName}{Path.DirectorySeparatorChar}{AppState.Settings.ServerConnection.RemoteRootPath}");
-		await ColonOutAsync("Settings File", AppState.YamlProjectFilePath);
+        ColonOut("Destination", $"{AppState.Settings.ServerConnection.ServerAddress}{Path.DirectorySeparatorChar}{AppState.Settings.ServerConnection.ShareName}{Path.DirectorySeparatorChar}{AppState.Settings.ServerConnection.RemoteRootPath}");
+		ColonOut("Settings File", AppState.YamlProjectFilePath);
         
         if (AppState.YamlCredsFilePath != string.Empty)
-            await ColonOutAsync("Credentials File", AppState.YamlCredsFilePath);
+            ColonOut("Credentials File", AppState.YamlCredsFilePath);
         
         if (AppState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -407,28 +407,41 @@ public sealed class AppRunner
         AppState.AppOfflineMarkup = AppState.AppOfflineMarkup.Replace("{{PageTitle}}", AppState.Settings.Offline.PageTitle);
         AppState.AppOfflineMarkup = AppState.AppOfflineMarkup.Replace("{{PageHtml}}", AppState.Settings.Offline.ContentHtml);
 
-        await ColonOutAsync("Started Deployment", $"{DateTime.Now:HH:mm:ss.fff}");
-        await Console.Out.WriteLineAsync();
+        ColonOut("Started Deployment", $"{DateTime.Now:HH:mm:ss.fff}");
 
         var sb = new StringBuilder();
+        string prefix;
+        var filesCopied = 0;
+        var totalBytes = 0D;
+        var filesRemoved = 0;
+        var firstBlank = false;
 
         #region Connect To Server Share
 
         if (AppState.Settings.MountShare)
         {
-            await Spinner.StartAsync("Mounting network share...", async spinner =>
+            prefix = "Mounting network share...";
+
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .StartAsync(prefix, async ctx => {
+                    
+                    AppState.CurrentSpinner = ctx;
+
+                    await AppState.ConnectNetworkShareAsync();
+
+                });
+
+            if (firstBlank == false)
             {
-                AppState.CurrentSpinner = spinner;
-
-                if (await AppState.ConnectNetworkShareAsync())
-                    spinner.Succeed($"{spinner.OriginalText} Success!");
-
-                await Task.CompletedTask;
-
-            }, Patterns.Dots, Patterns.Line);
+                firstBlank = true;
+                AnsiConsole.MarkupLine(string.Empty);
+            }
 
             if (AppState.CancellationTokenSource.IsCancellationRequested)
                 return;
+            
+            AnsiConsole.MarkupLine($"[green]●[/] {prefix} [green]Success![/]");            
         }
 
         #endregion
@@ -441,45 +454,53 @@ public sealed class AppRunner
             {
                 Timer.Restart();
 
-                await Spinner.StartAsync("Delete existing publish folder...", async spinner =>
-                {
-                    AppState.CurrentSpinner = spinner;
+                prefix = "Delete existing publish folder...";
 
-                    var retries = AppState.Settings.RetryCount;
-
-                    if (retries < 0)
-                        retries = new Settings().RetryCount;
-
-                    for (var x = 0; x < retries; x++)
+                AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .Start(prefix, ctx =>
                     {
-                        try
+
+                        AppState.CurrentSpinner = ctx;
+
+                        var retries = AppState.Settings.RetryCount;
+
+                        if (retries < 0)
+                            retries = new Settings().RetryCount;
+
+                        for (var x = 0; x < retries; x++)
                         {
-                            Directory.Delete(AppState.PublishPath, true);
-                            
-                            if (Directory.Exists(AppState.PublishPath) == false)
-                                break;
-                        }
-                        catch
-                        {
-                            for (var d = AppState.Settings.WriteRetryDelaySeconds; d >= 0; d--)
+                            try
                             {
-                                spinner.Text = $"{spinner.OriginalText} Retry {x + 1}";
-                                Thread.Sleep(1000);
+                                Directory.Delete(AppState.PublishPath, true);
+
+                                if (Directory.Exists(AppState.PublishPath) == false)
+                                    break;
+                            }
+                            catch
+                            {
+                                for (var d = AppState.Settings.WriteRetryDelaySeconds; d >= 0; d--)
+                                {
+                                    ctx.Status($"{prefix} Retry {x + 1}");
+                                    Thread.Sleep(1000);
+                                }
                             }
                         }
-                    }
+                    });
 
-                    if (AppState.CancellationTokenSource.IsCancellationRequested)
-                    {
-                        spinner.Fail($"{spinner.OriginalText} Failed!");
-                        return;
-                    }
+                if (firstBlank == false)
+                {
+                    firstBlank = true;
+                    AnsiConsole.MarkupLine(string.Empty);
+                }
 
-                    spinner.Text = $"{spinner.RootText} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-                    
-                    await Task.CompletedTask;
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                {
+                    AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
+                    return;
+                }
 
-                }, Patterns.Dots, Patterns.Line);
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
             }
 
             #endregion
@@ -490,44 +511,51 @@ public sealed class AppRunner
             {
                 Timer.Restart();
                 
-                await Spinner.StartAsync("Purge bin folder...", async spinner =>
-                {
-                    AppState.CurrentSpinner = spinner;
+                prefix = "Purge bin folder...";
 
-                    var retries = AppState.Settings.RetryCount;
-
-                    if (retries < 0)
-                        retries = new Settings().RetryCount;
-
-                    for (var x = 0; x < retries; x++)
+                AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .Start(prefix, ctx =>
                     {
-                        try
+                        AppState.CurrentSpinner = ctx;
+
+                        var retries = AppState.Settings.RetryCount;
+
+                        if (retries < 0)
+                            retries = new Settings().RetryCount;
+
+                        for (var x = 0; x < retries; x++)
                         {
-                            Directory.Delete(AppState.ProjectBinPath, true);
-                            Directory.CreateDirectory(AppState.ProjectBinPath);
-                            break;
-                        }
-                        catch
-                        {
-                            for (var d = AppState.Settings.WriteRetryDelaySeconds; d >= 0; d--)
+                            try
                             {
-                                spinner.Text = $"{spinner.OriginalText} Retry {x + 1}";
-                                Thread.Sleep(1000);
+                                Directory.Delete(AppState.ProjectBinPath, true);
+                                Directory.CreateDirectory(AppState.ProjectBinPath);
+                                break;
+                            }
+                            catch
+                            {
+                                for (var d = AppState.Settings.WriteRetryDelaySeconds; d >= 0; d--)
+                                {
+                                    ctx.Status($"{prefix} Retry {x + 1}");
+                                    Thread.Sleep(1000);
+                                }
                             }
                         }
-                    }
+                    });
 
-                    if (AppState.CancellationTokenSource.IsCancellationRequested)
-                    {
-                        spinner.Fail($"{spinner.OriginalText} Failed!");
-                        return;
-                    }
+                if (firstBlank == false)
+                {
+                    firstBlank = true;
+                    AnsiConsole.MarkupLine(string.Empty);
+                }
 
-                    spinner.Text = $"{spinner.RootText} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-                    
-                    await Task.CompletedTask;
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                {
+                    AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
+                    return;
+                }
 
-                }, Patterns.Dots, Patterns.Line);
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
             }
 
             #endregion
@@ -537,45 +565,52 @@ public sealed class AppRunner
             if (AppState.Settings.PurgeProject && Directory.Exists(AppState.ProjectObjPath))
             {
                 Timer.Restart();
-                
-                await Spinner.StartAsync("Purge obj folder...", async spinner =>
-                {
-                    AppState.CurrentSpinner = spinner;
 
-                    var retries = AppState.Settings.RetryCount;
+                prefix = "Purge obj folder...";
 
-                    if (retries < 0)
-                        retries = new Settings().RetryCount;
-
-                    for (var x = 0; x < retries; x++)
+                AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .Start(prefix, ctx =>
                     {
-                        try
+                        AppState.CurrentSpinner = ctx;
+
+                        var retries = AppState.Settings.RetryCount;
+
+                        if (retries < 0)
+                            retries = new Settings().RetryCount;
+
+                        for (var x = 0; x < retries; x++)
                         {
-                            Directory.Delete(AppState.ProjectObjPath, true);
-                            Directory.CreateDirectory(AppState.ProjectObjPath);
-                            break;
-                        }
-                        catch
-                        {
-                            for (var d = AppState.Settings.WriteRetryDelaySeconds; d >= 0; d--)
+                            try
                             {
-                                spinner.Text = $"{spinner.OriginalText} Retry {x + 1}";
-                                Thread.Sleep(1000);
+                                Directory.Delete(AppState.ProjectObjPath, true);
+                                Directory.CreateDirectory(AppState.ProjectObjPath);
+                                break;
+                            }
+                            catch
+                            {
+                                for (var d = AppState.Settings.WriteRetryDelaySeconds; d >= 0; d--)
+                                {
+                                    ctx.Status($"{prefix} Retry {x + 1}");
+                                    Thread.Sleep(1000);
+                                }
                             }
                         }
-                    }
+                    });
 
-                    if (AppState.CancellationTokenSource.IsCancellationRequested)
-                    {
-                        spinner.Fail($"{spinner.OriginalText} Failed!");
-                        return;
-                    }
+                if (firstBlank == false)
+                {
+                    firstBlank = true;
+                    AnsiConsole.MarkupLine(string.Empty);
+                }
 
-                    spinner.Text = $"{spinner.RootText} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-                    
-                    await Task.CompletedTask;
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                {
+                    AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
+                    return;
+                }
 
-                }, Patterns.Dots, Patterns.Line);
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
             }
 
             #endregion
@@ -584,104 +619,125 @@ public sealed class AppRunner
 
             if (AppState.Settings.CleanProject)
             {
-                await Spinner.StartAsync($"Clean & restore project {AppState.Settings.Project.ProjectFileName}...", async spinner =>
+                prefix = $"Clean & restore project {AppState.Settings.Project.ProjectFileName}...";
+
+                await AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .StartAsync(prefix, async ctx =>
+                    {
+                        AppState.CurrentSpinner = ctx;
+
+                        try
+                        {
+                            Timer.Restart();
+
+                            var cmd = Cli.Wrap("dotnet")
+                                .WithArguments(["restore", $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{AppState.Settings.Project.ProjectFilePath}"])
+                                .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
+                                .WithStandardErrorPipe(PipeTarget.Null);
+                            
+                            var result = await cmd.ExecuteAsync();
+
+                            if (result.IsSuccess == false)
+                            {
+                                AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
+                                AppState.Exceptions.Add($"Could not restore project packages; exit code: {result.ExitCode}");
+                                await AppState.CancellationTokenSource.CancelAsync();
+                                return;
+                            }
+                            
+                            cmd = Cli.Wrap("dotnet")
+                                .WithArguments(["clean", $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{AppState.Settings.Project.ProjectFilePath}"])
+                                .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
+                                .WithStandardErrorPipe(PipeTarget.Null);
+                            
+                            result = await cmd.ExecuteAsync();
+
+                            if (result.IsSuccess == false)
+                            {
+                                AppState.Exceptions.Add($"Could not clean the project; exit code: {result.ExitCode}");
+                                await AppState.CancellationTokenSource.CancelAsync();
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            AppState.Exceptions.Add($"Could not clean the project; {e.Message}");
+                            await AppState.CancellationTokenSource.CancelAsync();
+                        }
+                    });
+
+                if (firstBlank == false)
                 {
-                    try
-                    {
-                        Timer.Restart();
-
-                        var cmd = Cli.Wrap("dotnet")
-                            .WithArguments(["restore", $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{AppState.Settings.Project.ProjectFilePath}"])
-                            .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
-                            .WithStandardErrorPipe(PipeTarget.Null);
-                        
-                        var result = await cmd.ExecuteAsync();
-
-                        if (result.IsSuccess == false)
-                        {
-                            spinner.Fail($"{spinner.OriginalText} Failed!");
-                            AppState.Exceptions.Add($"Could not restore project packages; exit code: {result.ExitCode}");
-                            await AppState.CancellationTokenSource.CancelAsync();
-                            return;
-                        }
-                        
-                        cmd = Cli.Wrap("dotnet")
-                            .WithArguments(["clean", $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{AppState.Settings.Project.ProjectFilePath}"])
-                            .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
-                            .WithStandardErrorPipe(PipeTarget.Null);
-                        
-                        result = await cmd.ExecuteAsync();
-
-                        if (result.IsSuccess == false)
-                        {
-                            spinner.Fail($"{spinner.OriginalText} Failed!");
-                            AppState.Exceptions.Add($"Could not clean the project; exit code: {result.ExitCode}");
-                            await AppState.CancellationTokenSource.CancelAsync();
-                            return;
-                        }
-                        
-                        spinner.Text = $"{spinner.RootText} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-                    }
-                    catch (Exception e)
-                    {
-                        spinner.Fail($"{spinner.OriginalText}... Failed!");
-                        AppState.Exceptions.Add($"Could not clean the project; {e.Message}");
-                        await AppState.CancellationTokenSource.CancelAsync();
-                    }
-                    
-                }, Patterns.Dots, Patterns.Line);
+                    firstBlank = true;
+                    AnsiConsole.MarkupLine(string.Empty);
+                }
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
+                {
+                    AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
                     return;
+                }
+
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
             }
 
             #endregion
 
             #region Publish Project
             
-            await Spinner.StartAsync($"Publishing project {AppState.Settings.Project.ProjectFileName}...", async spinner =>
-            {
-                try
+            prefix = $"Publishing project {AppState.Settings.Project.ProjectFileName}...";
+
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .StartAsync(prefix, async ctx =>
                 {
-                    Timer.Restart();
-
-                    var additionalParams = AppState.Settings.Project.PublishParameters.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
-                    var cliParams = new List<string>
-                    {
-                        "publish", "--framework", $"net{AppState.Settings.Project.TargetFramework:N1}", $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{AppState.Settings.Project.ProjectFilePath}", "-c", AppState.Settings.Project.BuildConfiguration, "-o", AppState.PublishPath, $"/p:EnvironmentName={AppState.Settings.Project.EnvironmentName}"
-                    };
-
-                    cliParams.AddRange(additionalParams);
+                    AppState.CurrentSpinner = ctx;
                     
-                    var cmd = Cli.Wrap("dotnet")
-                        .WithArguments(cliParams)
-                        .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
-                        .WithStandardErrorPipe(PipeTarget.Null);
-		        
-                    var result = await cmd.ExecuteAsync();
-
-                    if (result.IsSuccess == false)
+                    try
                     {
-                        spinner.Fail($"{spinner.OriginalText} Failed!");
-                        AppState.Exceptions.Add($"Could not publish the project; exit code: {result.ExitCode}");
-                        await AppState.CancellationTokenSource.CancelAsync();
-                        return;
+                        Timer.Restart();
+
+                        var additionalParams = AppState.Settings.Project.PublishParameters.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+                        var cliParams = new List<string>
+                        {
+                            "publish", "--framework", $"net{AppState.Settings.Project.TargetFramework:N1}", $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{AppState.Settings.Project.ProjectFilePath}", "-c", AppState.Settings.Project.BuildConfiguration, "-o", AppState.PublishPath, $"/p:EnvironmentName={AppState.Settings.Project.EnvironmentName}"
+                        };
+
+                        cliParams.AddRange(additionalParams);
+                    
+                        var cmd = Cli.Wrap("dotnet")
+                            .WithArguments(cliParams)
+                            .WithStandardOutputPipe(PipeTarget.ToStringBuilder(sb))
+                            .WithStandardErrorPipe(PipeTarget.Null);
+		        
+                        var result = await cmd.ExecuteAsync();
+
+                        if (result.IsSuccess == false)
+                        {
+                            AppState.Exceptions.Add($"Could not publish the project; exit code: {result.ExitCode}");
+                            await AppState.CancellationTokenSource.CancelAsync();
+                        }
                     }
+                    catch (Exception e)
+                    {
+                        AppState.Exceptions.Add($"Could not publish the project; {e.Message}");
+                        await AppState.CancellationTokenSource.CancelAsync();
+                    }
+                });
 
-                    spinner.Text = $"{spinner.RootText} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-                }
-
-                catch (Exception e)
-                {
-                    spinner.Fail($"{spinner.OriginalText} Failed!");
-                    AppState.Exceptions.Add($"Could not publish the project; {e.Message}");
-                    await AppState.CancellationTokenSource.CancelAsync();
-                }
-                
-            }, Patterns.Dots, Patterns.Line);
+            if (firstBlank == false)
+            {
+                firstBlank = true;
+                AnsiConsole.MarkupLine(string.Empty);
+            }
 
             if (AppState.CancellationTokenSource.IsCancellationRequested)
+            {
+                AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
                 return;
+            }
+
+            AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
 
             #endregion
             
@@ -689,48 +745,60 @@ public sealed class AppRunner
 
             if (AppState.Settings.Project.CopyFilesToPublishFolder.Count != 0)
             {
-                await Spinner.StartAsync("Adding files to publish folder...", async spinner =>
-                {
-                    Timer.Restart();
-                    
-                    foreach (var item in AppState.Settings.Project.CopyFilesToPublishFolder)
+                prefix = "Adding files to publish folder...";
+
+                await AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .StartAsync(prefix, async ctx =>
                     {
-                        var sourceFilePath = $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{item}";
-                        var destFilePath = $"{AppState.PublishPath}{Path.DirectorySeparatorChar}{item}";
-                        var destParentPath = destFilePath.TrimEnd(item.GetLastPathSegment()) ?? string.Empty;
-                        
-                        if (AppState.CancellationTokenSource.IsCancellationRequested)
-                            break;
-                        
-                        try
+                        AppState.CurrentSpinner = ctx;
+
+                        Timer.Restart();
+                    
+                        foreach (var item in AppState.Settings.Project.CopyFilesToPublishFolder)
                         {
-                            Timer.Restart();
+                            var sourceFilePath = $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{item}";
+                            var destFilePath = $"{AppState.PublishPath}{Path.DirectorySeparatorChar}{item}";
+                            var destParentPath = destFilePath.TrimEnd(item.GetLastPathSegment()) ?? string.Empty;
+                        
+                            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                                break;
+                        
+                            try
+                            {
+                                Timer.Restart();
 
-                            if (Directory.Exists(destParentPath) == false)
-                                Directory.CreateDirectory(destParentPath);
+                                if (Directory.Exists(destParentPath) == false)
+                                    Directory.CreateDirectory(destParentPath);
                             
-                            File.Copy(sourceFilePath, destFilePath, true);
+                                File.Copy(sourceFilePath, destFilePath, true);
                             
-                            spinner.Text = $"{spinner.OriginalText} {item.GetLastPathSegment()}...";
+                                ctx.Status($"{prefix} {item.GetLastPathSegment()}...");
 
-                            await Task.Delay(5);
+                                await Task.Delay(5);
+                            }
+
+                            catch
+                            {
+                                AppState.Exceptions.Add($"Could not add file `{sourceFilePath} => {destFilePath}`");
+                                await AppState.CancellationTokenSource.CancelAsync();
+                            }
                         }
+                    });
 
-                        catch
-                        {
-                            spinner.Fail($"{spinner.OriginalText} {item.GetLastPathSegment()}... Failed!");
-                            AppState.Exceptions.Add($"Could not add file `{sourceFilePath} => {destFilePath}`");
-                            await AppState.CancellationTokenSource.CancelAsync();
-                        }
-                    }
-
-                    if (AppState.CancellationTokenSource.IsCancellationRequested == false)
-                        spinner.Text = $"{spinner.OriginalText} {AppState.Settings.Project.CopyFilesToPublishFolder.Count:N0} {AppState.Settings.Project.CopyFilesToPublishFolder.Count.Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-
-                }, Patterns.Dots, Patterns.Line);
+                if (firstBlank == false)
+                {
+                    firstBlank = true;
+                    AnsiConsole.MarkupLine(string.Empty);
+                }
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
+                {
+                    AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
                     return;
+                }
+
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} {AppState.Settings.Project.CopyFilesToPublishFolder.Count:N0} {AppState.Settings.Project.CopyFilesToPublishFolder.Count.Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
             }
             
             #endregion
@@ -739,61 +807,84 @@ public sealed class AppRunner
             
             if (AppState.Settings.Project.CopyFoldersToPublishFolder.Count != 0)
             {
-                await Spinner.StartAsync("Adding folders to publish folder...", async spinner =>
-                {
-                    Timer.Restart();
-                    
-                    foreach (var item in AppState.Settings.Project.CopyFoldersToPublishFolder)
+                prefix = "Adding folders to publish folder...";
+
+                await AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .StartAsync(prefix, async ctx =>
                     {
-                        if (AppState.CancellationTokenSource.IsCancellationRequested)
-                            break;
+                        AppState.CurrentSpinner = ctx;
                         
-                        try
+                        Timer.Restart();
+                    
+                        foreach (var item in AppState.Settings.Project.CopyFoldersToPublishFolder)
                         {
-                            Timer.Restart();
+                            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                                break;
+                        
+                            try
+                            {
+                                Timer.Restart();
 
-                            await Storage.CopyLocalFolderAsync(AppState, $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{item}", $"{AppState.PublishPath}{Path.DirectorySeparatorChar}{item}");
+                                await Storage.CopyLocalFolderAsync(AppState, $"{AppState.ProjectPath}{Path.DirectorySeparatorChar}{item}", $"{AppState.PublishPath}{Path.DirectorySeparatorChar}{item}");
 
-                            spinner.Text = $"{spinner.OriginalText} {item.GetLastPathSegment()}...";
-                            await Task.Delay(5);
+                                ctx.Status($"{prefix} {item.GetLastPathSegment()}...");
+                                await Task.Delay(5);
+                            }
+
+                            catch
+                            {
+                                AppState.Exceptions.Add($"Could not add folder `{item}`");
+                                await AppState.CancellationTokenSource.CancelAsync();
+                            }
                         }
+                    });
 
-                        catch
-                        {
-                            spinner.Fail($"{spinner.OriginalText} {item.GetLastPathSegment()}... Failed!");
-                            AppState.Exceptions.Add($"Could not add folder `{item}`");
-                            await AppState.CancellationTokenSource.CancelAsync();
-                        }
-                    }
-
-                    if (AppState.CancellationTokenSource.IsCancellationRequested == false)
-                        spinner.Text = $"{spinner.OriginalText} {AppState.Settings.Project.CopyFoldersToPublishFolder.Count:N0} {AppState.Settings.Project.CopyFoldersToPublishFolder.Count.Pluralize("folder", "folders")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-
-                }, Patterns.Dots, Patterns.Line);
+                if (firstBlank == false)
+                {
+                    firstBlank = true;
+                    AnsiConsole.MarkupLine(string.Empty);
+                }
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
+                {
+                    AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
                     return;
+                }
+
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} {AppState.Settings.Project.CopyFoldersToPublishFolder.Count:N0} {AppState.Settings.Project.CopyFoldersToPublishFolder.Count.Pluralize("folder", "folders")} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
             }
             
             #endregion
             
             #region Index Local Files
 
-            await Spinner.StartAsync("Indexing local files...", async spinner =>
-            {
-                Timer.Restart();
-                
-                await Storage.RecurseLocalPathAsync(AppState, AppState.PublishPath);
+            prefix = "Indexing local files...";
 
-                if (AppState.CancellationTokenSource.IsCancellationRequested)
-                    spinner.Fail($"{spinner.OriginalText} Failed!");
-                else        
-                    spinner.Text = $"{spinner.OriginalText} {AppState.LocalFiles.Count(f => f.IsFile):N0} {AppState.LocalFiles.Count(f => f.IsFile).Pluralize("file", "files")}, {AppState.LocalFiles.Count(f => f.IsFolder):N0} {AppState.LocalFiles.Count(f => f.IsFolder).Pluralize("folder", "folders")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .StartAsync(prefix, async ctx =>
+                {
+                    AppState.CurrentSpinner = ctx;
+                        
+                    Timer.Restart();
                 
-            }, Patterns.Dots, Patterns.Line);
-           
+                    await Storage.RecurseLocalPathAsync(AppState, AppState.PublishPath, prefix);
+                });
+
+            if (firstBlank == false)
+            {
+                firstBlank = true;
+                AnsiConsole.MarkupLine(string.Empty);
+            }
+            
             if (AppState.CancellationTokenSource.IsCancellationRequested)
+            {
+                AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
                 return;
+            }
+
+            AnsiConsole.MarkupLine($"[green]●[/] {prefix} {AppState.LocalFiles.Count(f => f.IsFile):N0} {AppState.LocalFiles.Count(f => f.IsFile).Pluralize("file", "files")}, {AppState.LocalFiles.Count(f => f.IsFolder):N0} {AppState.LocalFiles.Count(f => f.IsFolder).Pluralize("folder", "folders")} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
             
             #endregion
 
@@ -803,93 +894,98 @@ public sealed class AppRunner
             {
                 Timer.Restart();
 
-                await Spinner.StartAsync("Deploy files (server online)...", async spinner =>
-                {
-                    var filesCopied = 0;
-                    var totalBytes = 0D;
+                prefix = "Deploy files (server online)...";
+                filesCopied = 0;
+                totalBytes = 0D;
 
-                    AppState.CurrentSpinner = spinner;
-
-                    var filesToCopy = AppState.LocalFiles.Where(f => f is { IsFile: true, IsOnlineCopy: true }).OrderBy(f => f.RelativeComparablePath).ToList();
-
-                    const int groupSize = 10;
-
-                    // Threads of `groupSize` items to copy concurrently
-                    var arrayOfLists = filesToCopy
-                        .Select((item, index) => new { Item = item, Index = index })
-                        .GroupBy(x => x.Index / groupSize)
-                        .Select(g => g.Select(x => x.Item).ToList())
-                        .ToArray();
-                    
-                    var tasks = new List<Task>();
-                    var semaphore = new SemaphoreSlim(AppState.Settings.MaxThreadCount);
-                    
-                    foreach (var group in arrayOfLists)
+                await AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .StartAsync(prefix, async ctx =>
                     {
-                        await semaphore.WaitAsync();
-                    
-                        tasks.Add(Task.Run(() =>
+                        AppState.CurrentSpinner = ctx;
+                        
+                        var filesToCopy = AppState.LocalFiles.Where(f => f is { IsFile: true, IsOnlineCopy: true }).OrderBy(f => f.RelativeComparablePath).ToList();
+
+                        const int groupSize = 10;
+
+                        // Threads of `groupSize` items to copy concurrently
+                        var arrayOfLists = filesToCopy
+                            .Select((item, index) => new { Item = item, Index = index })
+                            .GroupBy(x => x.Index / groupSize)
+                            .Select(g => g.Select(x => x.Item).ToList())
+                            .ToArray();
+                        
+                        var tasks = new List<Task>();
+                        var semaphore = new SemaphoreSlim(AppState.Settings.MaxThreadCount);
+
+                        foreach (var group in arrayOfLists)
                         {
-                            try
+                            await semaphore.WaitAsync();
+
+                            tasks.Add(Task.Run(() =>
                             {
-                                if (AppState.CancellationTokenSource.IsCancellationRequested)
-                                    return;
-                    
-                                foreach (var fo in group)
+                                try
                                 {
-                                    if (fo.AlwaysOverwrite == false)
+                                    if (AppState.CancellationTokenSource.IsCancellationRequested)
+                                        return;
+
+                                    foreach (var fo in group)
                                     {
-                                        if (File.Exists(fo.AbsoluteServerPath))
+                                        if (fo.AlwaysOverwrite == false)
                                         {
-                                            var fileInfo = new FileInfo(fo.AbsoluteServerPath);
-                                            
-                                            if ((AppState.Settings.CompareFileDates == false || fileInfo.LastWriteTime.ComparableTime() == fo.LastWriteTime) && (AppState.Settings.CompareFileSizes == false || fileInfo.Length == fo.FileSizeBytes))
+                                            if (File.Exists(fo.AbsoluteServerPath))
                                             {
-                                                if (AppState.CurrentSpinner is not null)
+                                                var fileInfo = new FileInfo(fo.AbsoluteServerPath);
+
+                                                if ((AppState.Settings.CompareFileDates == false ||
+                                                     fileInfo.LastWriteTime.ComparableTime() == fo.LastWriteTime) &&
+                                                    (AppState.Settings.CompareFileSizes == false ||
+                                                     fileInfo.Length == fo.FileSizeBytes))
                                                 {
-                                                    if (AppState.CurrentSpinner.Text != $"{AppState.CurrentSpinner.OriginalText} Scanning...")
-                                                        AppState.CurrentSpinner.Text = $"{AppState.CurrentSpinner.OriginalText} Scanning...";
+                                                    if (AppState.CurrentSpinner is not null)
+                                                    {
+                                                        if (AppState.CurrentSpinner.Status != $"{prefix} Scanning...")
+                                                            AppState.CurrentSpinner.Status($"{prefix} Scanning...");
+                                                    }
+
+                                                    continue;
                                                 }
-                                                
-                                                continue;
                                             }
                                         }
+
+                                        ctx.Status($"{prefix} {fo.FileNameOrPathSegment}...");
+                                        totalBytes += fo.FileSizeBytes;
+                                        AppState.CopyFile(fo, prefix);
+                                        filesCopied++;
                                     }
-                    
-                                    spinner.Text = $"{spinner.OriginalText} {fo.FileNameOrPathSegment}...";
-                                    totalBytes += fo.FileSizeBytes;
-                                    AppState.CopyFile(fo);
-                                    filesCopied++;
                                 }
-                            }
-                            finally
-                            {
-                                semaphore.Release();
-                            }
-                        }));
-                    }
-                    
-                    await Task.WhenAll(tasks);
-                    
-                    if (AppState.CancellationTokenSource.IsCancellationRequested)
-                    {
-                        spinner.Fail($"{spinner.OriginalText} Failed!");
-                    }
-                    else
-                    {
-                        var bps = totalBytes / Timer.Elapsed.TotalSeconds;
+                                finally
+                                {
+                                    semaphore.Release();
+                                }
+                            }));
+                        }
 
-                        spinner.Text = filesCopied != 0 ? 
-                            $"{spinner.OriginalText} {filesCopied:N0} {filesCopied.Pluralize("file", "files")} copied ({Timer.Elapsed.FormatElapsedTime()}, {bps.FormatBytes()}/sec)... Success!" : 
-                            $"{spinner.OriginalText} Nothing to copy... Success!";
-                    }
+                        await Task.WhenAll(tasks);
+                    });
 
-                    await Task.CompletedTask;
-
-                }, Patterns.Dots, Patterns.Line);
+                if (firstBlank == false)
+                {
+                    firstBlank = true;
+                    AnsiConsole.MarkupLine(string.Empty);
+                }
 
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
+                {
+                    AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
                     return;
+                }
+
+                var bps = totalBytes / Timer.Elapsed.TotalSeconds;
+
+                AnsiConsole.MarkupLine(filesCopied != 0 ? 
+                    $"[green]●[/] {prefix} {filesCopied:N0} {filesCopied.Pluralize("file", "files")} copied ({Timer.Elapsed.FormatElapsedTime()}, {bps.FormatBytes()}/sec)... [green]Success![/]" : 
+                    $"[green]●[/] {prefix} Nothing to copy... [green]Success![/]");
             }
 
             #endregion
@@ -902,35 +998,43 @@ public sealed class AppRunner
             {
                 offlineTimer.Start();
 
-                await Spinner.StartAsync("Take website offline...", async spinner =>
-                {
-                    AppState.CurrentSpinner = spinner;
+                prefix = "Take website offline...";
 
-                    AppState.TakeServerOffline();
+                await AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .StartAsync(prefix, async ctx =>
+                    {
+                        AppState.CurrentSpinner = ctx;
+                        
+                        AppState.TakeServerOffline(prefix);
 
-                    if (AppState.CancellationTokenSource.IsCancellationRequested)
-                    {
-                        spinner.Fail($"{spinner.OriginalText} Failed!");
-                    }
-                    else
-                    {
-                        if (AppState.Settings.ServerOfflineDelaySeconds > 0)
+                        if (AppState.CancellationTokenSource.IsCancellationRequested == false)
                         {
-                            for (var i = AppState.Settings.ServerOfflineDelaySeconds; i >= 0; i--)
+                            if (AppState.Settings.ServerOfflineDelaySeconds > 0)
                             {
-                                spinner.Text = $"{spinner.OriginalText} Done... Waiting ({i:N0})";
+                                for (var i = AppState.Settings.ServerOfflineDelaySeconds; i >= 0; i--)
+                                {
+                                    ctx.Status($"{prefix} Done... Waiting ({i:N0})");
 
-                                await Task.Delay(1000);
+                                    await Task.Delay(1000);
+                                }
                             }
                         }
+                    });
 
-                        spinner.Text = $"{spinner.OriginalText} Success!";
-                    }
-
-                }, Patterns.Dots, Patterns.Line);
-
+                if (firstBlank == false)
+                {
+                    firstBlank = true;
+                    AnsiConsole.MarkupLine(string.Empty);
+                }
+                
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
+                {
+                    AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
                     return;
+                }
+
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} [green]Success![/]");
             }
 
             #endregion
@@ -941,91 +1045,105 @@ public sealed class AppRunner
             
             var filesToCopy = AppState.LocalFiles.Where(f => f is { IsFile: true, IsOnlineCopy: false }).OrderBy(f => f.RelativeComparablePath).ToList();
             var fileCount = filesToCopy.Count;
+            
+            totalBytes = 0;
+            filesCopied = 0;
 
-            await Spinner.StartAsync("Deploy files (server offline)...", async spinner =>
+            prefix = "Deploy files (server offline)...";
+
+            if (fileCount > 0)
             {
-                AppState.CurrentSpinner = spinner;
-
-                var totalBytes = 0D;
-                var filesCopied = 0;
-
-                if (fileCount > 0)
-                {
-                    const int groupSize = 10;
-
-                    // Threads of `groupSize` items to copy concurrently
-                    var arrayOfLists = filesToCopy
-                        .Select((item, index) => new { Item = item, Index = index })
-                        .GroupBy(x => x.Index / groupSize)
-                        .Select(g => g.Select(x => x.Item).ToList())
-                        .ToArray();
-
-                    var tasks = new List<Task>();
-                    var semaphore = new SemaphoreSlim(AppState.Settings.MaxThreadCount);
-                    
-                    foreach (var group in arrayOfLists)
+                await AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .StartAsync(prefix, async ctx =>
                     {
-                        await semaphore.WaitAsync();
-                        
-                        tasks.Add(Task.Run(() =>
+                        AppState.CurrentSpinner = ctx;
+
+                        const int groupSize = 10;
+
+                        // Threads of `groupSize` items to copy concurrently
+                        var arrayOfLists = filesToCopy
+                            .Select((item, index) => new { Item = item, Index = index })
+                            .GroupBy(x => x.Index / groupSize)
+                            .Select(g => g.Select(x => x.Item).ToList())
+                            .ToArray();
+
+                        var tasks = new List<Task>();
+                        var semaphore = new SemaphoreSlim(AppState.Settings.MaxThreadCount);
+
+                        foreach (var group in arrayOfLists)
                         {
-                            try
+                            await semaphore.WaitAsync();
+
+                            tasks.Add(Task.Run(() =>
                             {
-                                if (AppState.CancellationTokenSource.IsCancellationRequested)
-                                    return;
-
-                                foreach (var fo in group)
+                                try
                                 {
-                                    if (fo.AlwaysOverwrite == false)
-                                    {
-                                        if (File.Exists(fo.AbsoluteServerPath))
-                                        {
-                                            var fileInfo = new FileInfo(fo.AbsoluteServerPath);
-
-                                            if ((AppState.Settings.CompareFileDates == false || fileInfo.LastWriteTime.ComparableTime() == fo.LastWriteTime) && (AppState.Settings.CompareFileSizes == false || fileInfo.Length == fo.FileSizeBytes))
-                                                continue;
-                                        }
-                                    }
-                                    
-                                    totalBytes += fo.FileSizeBytes;
-
-                                    AppState.CopyFile(fo);
-
                                     if (AppState.CancellationTokenSource.IsCancellationRequested)
                                         return;
 
-                                    filesCopied++;
+                                    foreach (var fo in group)
+                                    {
+                                        if (fo.AlwaysOverwrite == false)
+                                        {
+                                            if (File.Exists(fo.AbsoluteServerPath))
+                                            {
+                                                var fileInfo = new FileInfo(fo.AbsoluteServerPath);
+
+                                                if ((AppState.Settings.CompareFileDates == false ||
+                                                     fileInfo.LastWriteTime.ComparableTime() == fo.LastWriteTime) &&
+                                                    (AppState.Settings.CompareFileSizes == false ||
+                                                     fileInfo.Length == fo.FileSizeBytes))
+                                                    continue;
+                                            }
+                                        }
+
+                                        totalBytes += fo.FileSizeBytes;
+
+                                        AppState.CopyFile(fo, prefix);
+
+                                        if (AppState.CancellationTokenSource.IsCancellationRequested)
+                                            return;
+
+                                        filesCopied++;
+                                    }
                                 }
-                            }
-                            finally
-                            {
-                                semaphore.Release();
-                            }
-                        }));
-                    }
+                                finally
+                                {
+                                    semaphore.Release();
+                                }
+                            }));
+                        }
 
-                    await Task.WhenAll(tasks);
+                        await Task.WhenAll(tasks);
+                    });
 
-                    if (AppState.CancellationTokenSource.IsCancellationRequested)
-                        spinner.Fail($"{spinner.OriginalText} Failed!");
-                    else
-                    {
-                        var bps = totalBytes / Timer.Elapsed.TotalSeconds;
-
-                        spinner.Text = $"{spinner.OriginalText} {filesCopied:N0} {filesCopied.Pluralize("file", "files")} copied ({Timer.Elapsed.FormatElapsedTime()}, {bps.FormatBytes()}/sec)... Success!";
-                    }
-                }
-                else
+                if (firstBlank == false)
                 {
-                    spinner.Text = $"{spinner.OriginalText} No files to update... Success!";
+                    firstBlank = true;
+                    AnsiConsole.MarkupLine(string.Empty);
+                }
+                
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                {
+                    AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
+                    return;
                 }
 
-                await Task.CompletedTask;
+                var bps = totalBytes / Timer.Elapsed.TotalSeconds;
 
-            }, Patterns.Dots, Patterns.Line);
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} {filesCopied:N0} {filesCopied.Pluralize("file", "files")} copied ({Timer.Elapsed.FormatElapsedTime()}, {bps.FormatBytes()}/sec)... [green]Success![/]");
+            }
+            else
+            {
+                if (firstBlank == false)
+                {
+                    firstBlank = true;
+                    AnsiConsole.MarkupLine(string.Empty);
+                }
 
-            if (AppState.CancellationTokenSource.IsCancellationRequested)
-                return;
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} No files to update... [green]Success![/]");
+            }
 
             #endregion
 
@@ -1033,21 +1151,32 @@ public sealed class AppRunner
 
             if (AppState.Settings.DeleteOrphans)
             {
-                await Spinner.StartAsync("Indexing server files for cleanup...", async spinner =>
+                prefix = "Indexing server files for cleanup...";
+
+                await AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .StartAsync(prefix, async ctx =>
+                    {
+                        AppState.CurrentSpinner = ctx;
+                        
+                        Timer.Restart();
+                
+                        await AppState.RecurseServerPathAsync(AppState.GetServerPathPrefix(), prefix);
+                    });
+
+                if (firstBlank == false)
                 {
-                    Timer.Restart();
-                    AppState.CurrentSpinner = spinner;
-
-                    await AppState.RecurseServerPathAsync(AppState.GetServerPathPrefix());
-
-                    if (AppState.CancellationTokenSource.IsCancellationRequested)
-                        spinner.Fail($"{spinner.OriginalText} Failed!");
-                    else
-                        spinner.Text = $"{spinner.OriginalText} {AppState.ServerFiles.Count(f => f.IsFile):N0} {AppState.ServerFiles.Count(f => f.IsFile).Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-                });
+                    firstBlank = true;
+                    AnsiConsole.MarkupLine(string.Empty);
+                }
                 
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
+                {
+                    AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
                     return;
+                }
+
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} {AppState.ServerFiles.Count(f => f.IsFile):N0} {AppState.ServerFiles.Count(f => f.IsFile).Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
             }
 
             #endregion
@@ -1056,73 +1185,76 @@ public sealed class AppRunner
 
             if (AppState.Settings.DeleteOrphans)
             {
-                await Spinner.StartAsync("Deleting orphaned files...", async spinner =>
-                {
-                    Timer.Restart();
+                prefix = "Deleting orphaned files...";
 
-                    var filesRemoved = 0;
-
-                    AppState.CurrentSpinner = spinner;
-                    
-                    Timer.Restart();
-
-                    var itemsToDelete = AppState.ServerFiles.Except(AppState.LocalFiles, new FileObjectComparer()).ToList();
-
-                    // Remove paths that enclose ignore paths
-                    foreach (var fileObject in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
+                AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .Start(prefix, ctx =>
                     {
-                        var item = (ServerFileObject)fileObject;
+                        AppState.CurrentSpinner = ctx;
                         
-                        foreach (var ignorePath in AppState.Settings.Paths.IgnoreFolderPaths)
+                        Timer.Restart();
+                
+                        var itemsToDelete = AppState.ServerFiles.Except(AppState.LocalFiles, new FileObjectComparer()).ToList();
+
+                        // Remove paths that enclose ignore paths
+                        foreach (var fileObject in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
                         {
-                            if (ignorePath.StartsWith(item.RelativeComparablePath) == false)
-                                continue;
+                            var item = (ServerFileObject)fileObject;
+                            
+                            foreach (var ignorePath in AppState.Settings.Paths.IgnoreFolderPaths)
+                            {
+                                if (ignorePath.StartsWith(item.RelativeComparablePath) == false)
+                                    continue;
 
-                            itemsToDelete.Remove(item);
-                        }
-                    }
-
-                    // Remove descendants of folders to be deleted
-                    foreach (var fileObject in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
-                    {
-                        var item = (ServerFileObject)fileObject;
-
-                        foreach (var subitem in itemsToDelete.ToList().OrderByDescending(o => o.Level))
-                        {
-                            if (subitem.Level > item.Level && subitem.RelativeComparablePath.StartsWith(item.RelativeComparablePath))
-                                itemsToDelete.Remove(subitem);
-                        }
-                    }
-
-                    foreach (var fileObject in itemsToDelete)
-                    {
-                        var item = (ServerFileObject)fileObject;
-
-                        if (item.IsFile)
-                        {
-                            AppState.DeleteServerFile(item, true);
-                            filesRemoved++;
-                        }
-                        else
-                        {
-                            AppState.DeleteServerFolder(item, true);
+                                itemsToDelete.Remove(item);
+                            }
                         }
 
-                        if (AppState.CancellationTokenSource.IsCancellationRequested)
-                            break;
-                    }
+                        // Remove descendants of folders to be deleted
+                        foreach (var fileObject in itemsToDelete.ToList().Where(f => f.IsFolder).OrderBy(o => o.Level))
+                        {
+                            var item = (ServerFileObject)fileObject;
 
-                    if (AppState.CancellationTokenSource.IsCancellationRequested)
-                        spinner.Fail($"{spinner.OriginalText} Failed!");
-                    else
-                        spinner.Text = $"{spinner.OriginalText} {filesRemoved:N0} {filesRemoved.Pluralize("file", "files")} deleted ({Timer.Elapsed.FormatElapsedTime()})... Success!";
-                    
-                    await Task.CompletedTask;
+                            foreach (var subitem in itemsToDelete.ToList().OrderByDescending(o => o.Level))
+                            {
+                                if (subitem.Level > item.Level && subitem.RelativeComparablePath.StartsWith(item.RelativeComparablePath))
+                                    itemsToDelete.Remove(subitem);
+                            }
+                        }
 
-                }, Patterns.Dots, Patterns.Line);
+                        foreach (var fileObject in itemsToDelete)
+                        {
+                            var item = (ServerFileObject)fileObject;
 
+                            if (item.IsFile)
+                            {
+                                AppState.DeleteServerFile(item, prefix, true);
+                                filesRemoved++;
+                            }
+                            else
+                            {
+                                AppState.DeleteServerFolder(item, prefix, true);
+                            }
+
+                            if (AppState.CancellationTokenSource.IsCancellationRequested)
+                                break;
+                        }
+                    });
+
+                if (firstBlank == false)
+                {
+                    firstBlank = true;
+                    AnsiConsole.MarkupLine(string.Empty);
+                }
+                
                 if (AppState.CancellationTokenSource.IsCancellationRequested)
+                {
+                    AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
                     return;
+                }
+
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} {filesRemoved:N0} {filesRemoved.Pluralize("file", "files")} deleted ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
             }
 
             #endregion
@@ -1131,84 +1263,90 @@ public sealed class AppRunner
 
             if (AppState.Settings.TakeServerOffline)
             {
-                await Spinner.StartAsync("Bring website online...", async spinner =>
-                {
-                    AppState.CurrentSpinner = spinner;
+                prefix = "Bring website online...";
 
-                    if (AppState.Settings.ServerOnlineDelaySeconds > 0)
+                await AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .StartAsync(prefix, async ctx =>
                     {
-                        for (var i = AppState.Settings.ServerOnlineDelaySeconds; i >= 0; i--)
+                        AppState.CurrentSpinner = ctx;
+                        
+                        if (AppState.Settings.ServerOnlineDelaySeconds > 0)
                         {
-                            spinner.Text = $"{spinner.OriginalText}... Waiting ({i:N0})";
-                            await Task.Delay(1000);
+                            for (var i = AppState.Settings.ServerOnlineDelaySeconds; i >= 0; i--)
+                            {
+                                ctx.Status($"{prefix}... Waiting ({i:N0})");
+                                await Task.Delay(1000);
+                            }
                         }
-                    }
 
-                    AppState.BringServerOnline();
-                    
-                    if (AppState.CancellationTokenSource.IsCancellationRequested)
-                    {
-                        spinner.Fail($"{spinner.OriginalText} Failed!");
-                    }
-                    else
-                    {
-                        spinner.Text = $"{spinner.OriginalText} Success!";
-                    }
+                        AppState.BringServerOnline(prefix);
+                    });
 
-                }, Patterns.Dots, Patterns.Line);
-
-                if (AppState.CancellationTokenSource.IsCancellationRequested)
-                    return;
-
-                await Spinner.StartAsync("Website offline for ", async spinner =>
+                if (firstBlank == false)
                 {
-                    spinner.Text += offlineTimer.Elapsed.FormatElapsedTime();
+                    firstBlank = true;
+                    AnsiConsole.MarkupLine(string.Empty);
+                }
+                
+                if (AppState.CancellationTokenSource.IsCancellationRequested)
+                {
+                    AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
+                    return;
+                }
 
-                    await Task.CompletedTask;
-
-                }, Patterns.Dots, Patterns.Line);
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} Website offline for {offlineTimer.Elapsed.FormatElapsedTime()}... [green]Success![/]");
             }
 
             #endregion
 
             #region Local Cleanup
 
-            await Spinner.StartAsync("Cleaning up...", async spinner =>
-            {
-                Timer.Restart();
-                
-                AppState.CurrentSpinner = spinner;
+            prefix = "Cleaning up...";
 
-                var retries = AppState.Settings.RetryCount;
-
-                if (retries < 0)
-                    retries = new Settings().RetryCount;
-
-                for (var x = 0; x < retries; x++)
+            AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .Start(prefix, ctx =>
                 {
-                    try
+                    AppState.CurrentSpinner = ctx;
+                    Timer.Restart();
+                
+                    var retries = AppState.Settings.RetryCount;
+
+                    if (retries < 0)
+                        retries = new Settings().RetryCount;
+
+                    for (var x = 0; x < retries; x++)
                     {
-                        Directory.Delete(AppState.PublishPath, true);
-                        break;
-                    }
-                    catch
-                    {
-                        for (var d = AppState.Settings.WriteRetryDelaySeconds; d >= 0; d--)
+                        try
                         {
-                            spinner.Text = $"{spinner.OriginalText} Retry {x + 1}";
-                            Thread.Sleep(1000);
+                            Directory.Delete(AppState.PublishPath, true);
+                            break;
+                        }
+                        catch
+                        {
+                            for (var d = AppState.Settings.WriteRetryDelaySeconds; d >= 0; d--)
+                            {
+                                ctx.Status($"{prefix} Retry {x + 1}");
+                                Thread.Sleep(1000);
+                            }
                         }
                     }
-                }
+                });
 
-                if (AppState.CancellationTokenSource.IsCancellationRequested)
-                    spinner.Fail($"{spinner.OriginalText} Failed!");
-                else
-                    spinner.Text = $"{spinner.RootText} ({Timer.Elapsed.FormatElapsedTime()})... Success!";
+            if (firstBlank == false)
+            {
+                firstBlank = true;
+                AnsiConsole.MarkupLine(string.Empty);
+            }
+            
+            if (AppState.CancellationTokenSource.IsCancellationRequested)
+            {
+                AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
+                return;
+            }
 
-                await Task.CompletedTask;
-
-            }, Patterns.Dots, Patterns.Line);
+            AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
 
             #endregion
         }
@@ -1216,16 +1354,26 @@ public sealed class AppRunner
         {
             if (AppState.Settings.UnmountShare)
             {
-                await Spinner.StartAsync("Flushing caches and unmounting network share...", async spinner =>
-                {
-                    AppState.CurrentSpinner = spinner;
+                var result = false;
+                
+                prefix = "Flushing caches and unmounting network share...";
 
-                    if (await AppState.DisconnectNetworkShareAsync())
-                        spinner.Succeed($"{spinner.OriginalText} Success!");
+                await AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .StartAsync(prefix, async ctx =>
+                    {
+                        AppState.CurrentSpinner = ctx;
 
-                    await Task.CompletedTask;
+                        result = await AppState.DisconnectNetworkShareAsync();
+                    });
 
-                }, Patterns.Dots, Patterns.Line);
+                if (firstBlank == false)
+                    AnsiConsole.MarkupLine(string.Empty);
+                
+                if (AppState.CancellationTokenSource.IsCancellationRequested || result == false)
+                    AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
+                else
+                    AnsiConsole.MarkupLine($"[green]●[/] {prefix} [green]Success![/]");
             }
         }
     }

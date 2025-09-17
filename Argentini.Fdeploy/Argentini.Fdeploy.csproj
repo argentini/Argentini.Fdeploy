@@ -34,7 +34,9 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="CliWrap" Version="3.8.2" />
+      <PackageReference Include="CliWrap" Version="3.9.0" />
+      <PackageReference Include="Spectre.Console" Version="0.51.1" />
+      <PackageReference Include="Spectre.Console.Cli" Version="0.51.1" />
       <PackageReference Include="YamlDotNet" Version="16.3.0" />
     </ItemGroup>
 

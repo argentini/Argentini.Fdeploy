@@ -1,10 +1,12 @@
+using Spectre.Console;
+
 namespace Argentini.Fdeploy.Extensions;
 
 public static class Storage
 {
     #region Local Storage
     
-    public static async ValueTask RecurseLocalPathAsync(AppState appState, string path)
+    public static async ValueTask RecurseLocalPathAsync(AppState appState, string path, string originalText)
     {
         foreach (var subdir in Directory.GetDirectories(path).OrderBy(d => d))
         {
@@ -18,12 +20,10 @@ public static class Storage
             if (FolderPathShouldBeIgnoredDuringScan(appState, fo))
                 continue;
 
-            if (appState.CurrentSpinner is not null)
-                appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {fo.RelativeComparablePath}...";
-
+            appState.CurrentSpinner?.Status($"{originalText} {fo.RelativeComparablePath}...");
             appState.LocalFiles.Add(fo);
 
-            await RecurseLocalPathAsync(appState, subdir);
+            await RecurseLocalPathAsync(appState, subdir, originalText);
         }
         
         foreach (var filePath in Directory.GetFiles(path).OrderBy(f => f))
@@ -174,7 +174,7 @@ public static class Storage
     
     #region Server Storage
     
-    public static async Task RecurseServerPathAsync(this AppState appState, string path)
+    public static async Task RecurseServerPathAsync(this AppState appState, string path, string originalText)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -199,9 +199,7 @@ public static class Storage
                     if (FilePathShouldBeIgnoredDuringScan(appState, fo))
                         continue;
 
-                    if (appState.CurrentSpinner is not null)
-                        appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {fo.RelativeComparablePath}...";
-
+                    appState.CurrentSpinner?.Status($"{originalText} {fo.RelativeComparablePath}...");
                     appState.ServerFiles.Add(fo);
                 }
                 catch
@@ -242,12 +240,10 @@ public static class Storage
                     if (FolderPathShouldBeIgnoredDuringScan(appState, fo))
                         return;
 
-                    if (appState.CurrentSpinner is not null)
-                        appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {fo.RelativeComparablePath}...";
-
+                    appState.CurrentSpinner?.Status($"{originalText} {fo.RelativeComparablePath}...");
                     appState.ServerFiles.Add(fo);
 
-                    await RecurseServerPathAsync(appState, directory);
+                    await RecurseServerPathAsync(appState, directory, originalText);
                 }
                 catch
                 {
@@ -290,7 +286,7 @@ public static class Storage
         return Directory.Exists(serverFolderPath);
     }
 
-    public static void EnsureServerPathExists(this AppState appState, string? serverFolderPath)
+    public static void EnsureServerPathExists(this AppState appState, string? serverFolderPath, string originalText)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -323,7 +319,7 @@ public static class Storage
             for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
             {
                 if (appState.CurrentSpinner is not null)
-                    appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {serverFolderPath} Retry {attempt + 1} ({x:N0})...";
+                    appState.CurrentSpinner.Status($"{originalText} {serverFolderPath} Retry {attempt + 1} ({x:N0})...");
 
                 Thread.Sleep(1000);
             }
@@ -336,7 +332,7 @@ public static class Storage
         appState.CancellationTokenSource.Cancel();
     }
 
-    public static void DeleteServerFile(this AppState appState, LocalFileObject fo, bool showOutput = false)
+    public static void DeleteServerFile(this AppState appState, LocalFileObject fo, string originalText, bool showOutput = false)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -347,7 +343,7 @@ public static class Storage
         var serverRelativePath = fo.RelativeComparablePath;
 
         if (showOutput && appState.CurrentSpinner is not null)
-            appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {serverRelativePath}...";
+            appState.CurrentSpinner.Status($"{originalText} {serverRelativePath}...");
 
         var success = true;
         var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
@@ -370,9 +366,7 @@ public static class Storage
 
             for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
             {
-                if (appState.CurrentSpinner is not null)
-                    appState.CurrentSpinner.Text =
-                        $"{appState.CurrentSpinner.OriginalText} {serverRelativePath}... Retry {attempt + 1} ({x:N0})...";
+                appState.CurrentSpinner?.Status($"{originalText} {serverRelativePath}... Retry {attempt + 1} ({x:N0})...");
 
                 Thread.Sleep(1000);
             }
@@ -386,7 +380,7 @@ public static class Storage
         appState.CancellationTokenSource.Cancel();
     }
 
-    public static void DeleteServerFile(this AppState appState, ServerFileObject sfo, bool showOutput = false)
+    public static void DeleteServerFile(this AppState appState, ServerFileObject sfo, string originalText, bool showOutput = false)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -397,7 +391,7 @@ public static class Storage
         var serverRelativePath = sfo.RelativeComparablePath;
         
         if (showOutput && appState.CurrentSpinner is not null)
-            appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {serverRelativePath}...";
+            appState.CurrentSpinner.Status($"{originalText} {serverRelativePath}...");
         
         var success = true;
         var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
@@ -421,7 +415,7 @@ public static class Storage
             for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
             {
                 if (appState.CurrentSpinner is not null)
-                    appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {serverRelativePath}... Retry {attempt + 1} ({x:N0})...";
+                    appState.CurrentSpinner.Status($"{originalText} {serverRelativePath}... Retry {attempt + 1} ({x:N0})...");
 
                 Thread.Sleep(1000);
             }
@@ -434,13 +428,13 @@ public static class Storage
         appState.CancellationTokenSource.Cancel();
     }
 
-    public static void DeleteServerFolder(this AppState appState, ServerFileObject sfo, bool showOutput = false)
+    public static void DeleteServerFolder(this AppState appState, ServerFileObject sfo, string originalText, bool showOutput = false)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
         if (showOutput && appState.CurrentSpinner is not null)
-            appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {sfo.RelativeComparablePath}...";
+            appState.CurrentSpinner.Status($"{originalText} {sfo.RelativeComparablePath}...");
         
         var success = true;
         var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
@@ -456,8 +450,7 @@ public static class Storage
 
             for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
             {
-                if (appState.CurrentSpinner is not null)
-                    appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {sfo.RelativeComparablePath}... Retry {attempt + 1} ({x:N0})...";
+                appState.CurrentSpinner?.Status($"{originalText} {sfo.RelativeComparablePath}... Retry {attempt + 1} ({x:N0})...");
 
                 Thread.Sleep(1000);
             }
@@ -470,7 +463,7 @@ public static class Storage
         appState.CancellationTokenSource.Cancel();
     }
 
-    public static void CopyFile(this AppState appState, LocalFileObject fo)
+    public static void CopyFile(this AppState appState, LocalFileObject fo, string originalText)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -483,11 +476,9 @@ public static class Storage
                 appState.CancellationTokenSource.Cancel();
                 return;
             }
-         
-            if (appState.CurrentSpinner is not null)
-                appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {fo.RelativeComparablePath}...";
-            
-            appState.EnsureServerPathExists(fo.AbsoluteServerPath.TrimEnd(fo.AbsoluteServerPath.GetLastPathSegment()));
+
+            appState.CurrentSpinner?.Status($"{originalText} {fo.RelativeComparablePath}...");
+            appState.EnsureServerPathExists(fo.AbsoluteServerPath.TrimEnd(fo.AbsoluteServerPath.GetLastPathSegment()), originalText);
             
             if (appState.CancellationTokenSource.IsCancellationRequested)
                 return;
@@ -497,7 +488,7 @@ public static class Storage
                 var success = true;
                 var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
 
-                appState.DeleteServerFile(fo);
+                appState.DeleteServerFile(fo, originalText);
 
                 if (appState.CancellationTokenSource.IsCancellationRequested)
                     return;
@@ -516,8 +507,7 @@ public static class Storage
 
                     for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
                     {
-                        if (appState.CurrentSpinner is not null)
-                            appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} {fo.RelativeComparablePath} Retry {attempt + 1} ({x:N0})...";
+                        appState.CurrentSpinner?.Status($"{originalText} {fo.RelativeComparablePath} Retry {attempt + 1} ({x:N0})...");
 
                         Thread.Sleep(1000);
                     }
@@ -546,14 +536,14 @@ public static class Storage
     
     #region Offline Support
     
-    public static void TakeServerOffline(this AppState appState)
+    public static void TakeServerOffline(this AppState appState, string originalText)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
 
         var fo = new LocalFileObject(appState, $"{appState.PublishPath}{Path.DirectorySeparatorChar}app_offline.htm", DateTimeOffset.UtcNow.ToUnixTimeSeconds(), DateTimeOffset.UtcNow.ToUnixTimeSeconds(), appState.AppOfflineMarkup.Length, true);
         
-        appState.DeleteServerFile(fo);
+        appState.DeleteServerFile(fo, originalText);
 
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
@@ -563,8 +553,7 @@ public static class Storage
             var success = true;
             var retries = appState.Settings.RetryCount > 0 ? appState.Settings.RetryCount : 1;
 
-            if (appState.CurrentSpinner is not null)
-                appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} Creating /app_offline.htm...";
+            appState.CurrentSpinner?.Status($"{originalText} Creating /app_offline.htm...");
 
             for (var attempt = 0; attempt < retries; attempt++)
             {
@@ -577,8 +566,7 @@ public static class Storage
 
                 for (var x = appState.Settings.WriteRetryDelaySeconds; x >= 0; x--)
                 {
-                    if (appState.CurrentSpinner is not null)
-                        appState.CurrentSpinner.Text = $"{appState.CurrentSpinner.OriginalText} Creating /app_offline.htm... Retry {attempt + 1} ({x:N0})...";
+                    appState.CurrentSpinner?.Status($"{originalText} Creating /app_offline.htm... Retry {attempt + 1} ({x:N0})...");
 
                     Thread.Sleep(1000);
                 }
@@ -597,14 +585,14 @@ public static class Storage
         }
     }
     
-    public static void BringServerOnline(this AppState appState)
+    public static void BringServerOnline(this AppState appState, string originalText)
     {
         if (appState.CancellationTokenSource.IsCancellationRequested)
             return;
         
         var fo = new LocalFileObject(appState, $"{appState.PublishPath}{Path.DirectorySeparatorChar}app_offline.htm", DateTimeOffset.UtcNow.ToUnixTimeSeconds(), DateTimeOffset.UtcNow.ToUnixTimeSeconds(), appState.AppOfflineMarkup.Length, true);
         
-        appState.DeleteServerFile(fo);
+        appState.DeleteServerFile(fo, originalText);
     }
     
     #endregion
