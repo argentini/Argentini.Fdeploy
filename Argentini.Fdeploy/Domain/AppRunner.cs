@@ -326,7 +326,7 @@ public sealed class AppRunner
 		}
 		
 		AnsiConsole.MarkupLine(Strings.ThickLine.Repeat(MaxConsoleWidth));
-        AnsiConsole.MarkupLine("Fdeploy: Deploy .NET web applications using SMB on Linux, macOS, or Windows");
+        AnsiConsole.MarkupLine("Fdeploy: Deploy ASP.NET applications using SMB on Linux, macOS, or Windows");
         AnsiConsole.MarkupLine($"Version {version} for {Identify.GetOsPlatformName()} (.NET {Identify.GetRuntimeVersion()}/{Identify.GetProcessorArchitecture()})");
         AnsiConsole.MarkupLine(Strings.ThickLine.Repeat(MaxConsoleWidth));
 		
