@@ -6,9 +6,9 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
 
-        <AssemblyVersion>1.3.7.0</AssemblyVersion>
-        <FileVersion>1.3.7.0</FileVersion>
-        <PackageVersion>1.3.7</PackageVersion>
+        <AssemblyVersion>1.4.0.0</AssemblyVersion>
+        <FileVersion>1.4.0.0</FileVersion>
+        <PackageVersion>1.4.0</PackageVersion>
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>fdeploy</ToolCommandName>
         <PackageOutputPath>./nupkg</PackageOutputPath>
@@ -27,7 +27,7 @@
         <PackageProjectUrl>https://github.com/argentini/Argentini.Fdeploy</PackageProjectUrl>
         <RepositoryUrl>https://github.com/argentini/Argentini.Fdeploy</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
-        <PackageReleaseNotes>Will now abort if no credentials file is found</PackageReleaseNotes>
+        <PackageReleaseNotes>Enhanced output color and animation</PackageReleaseNotes>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageLicenseFile>LICENSE.txt</PackageLicenseFile>
         <PackageIcon>fdeploy-icon.png</PackageIcon>
