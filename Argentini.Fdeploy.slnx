@@ -1,0 +1,6 @@
+﻿<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+  </Configurations>
+  <Project Path="Argentini.Fdeploy\Argentini.Fdeploy.csproj" Type="Classic C#" />
+</Solution>
