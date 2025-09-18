@@ -12,20 +12,6 @@ public sealed class AppRunner
 {
     #region Constants
 
-    private static int MaxConsoleWidth => GetMaxConsoleWidth();
-	
-    private static int GetMaxConsoleWidth()
-    {
-        try
-        {
-            return Console.WindowWidth - 1;
-        }
-        catch
-        {
-            return 78;
-        }
-    }
-
     private static string CliErrorPrefix => "  • ";
 
     #endregion
@@ -303,10 +289,13 @@ public sealed class AppRunner
     public static void ColonOut(string topic, string message)
     {
         const int maxTopicLength = 20;
+        var maxWidth = Console.WindowWidth - 23;
 
+        message = message.TruncateCenter((int)Math.Floor(maxWidth / 3d), (int)Math.Floor((maxWidth / 3d) * 2) - 3, maxWidth);
+        
         AnsiConsole.MarkupLine(topic.Length >= maxTopicLength
-            ? $"{topic[..maxTopicLength]} : {message}"
-            : $"{topic}{" ".Repeat(maxTopicLength - topic.Length)} : {message}");
+            ? $"[dim]{topic[..maxTopicLength]} :[/] {message}"
+            : $"[dim]{topic}{" ".Repeat(maxTopicLength - topic.Length)} :[/] {message}");
     }
     
     #endregion
@@ -321,14 +310,14 @@ public sealed class AppRunner
         
 		if (VersionMode)
 		{
-            AnsiConsole.MarkupLine($"Fdeploy Version {version}");
+            AnsiConsole.MarkupLine($"[bold]Fdeploy[/] Version {version}");
 			return;
 		}
 		
-		AnsiConsole.MarkupLine(Strings.ThickLine.Repeat(MaxConsoleWidth));
-        AnsiConsole.MarkupLine("Fdeploy: Deploy ASP.NET applications using SMB on Linux, macOS, or Windows");
+        AnsiConsole.Write(new Rule());
+        AnsiConsole.MarkupLine("[bold]Fdeploy[/]: Deploy ASP.NET applications using SMB on Linux, macOS, or Windows");
         AnsiConsole.MarkupLine($"Version {version} for {Identify.GetOsPlatformName()} (.NET {Identify.GetRuntimeVersion()}/{Identify.GetProcessorArchitecture()})");
-        AnsiConsole.MarkupLine(Strings.ThickLine.Repeat(MaxConsoleWidth));
+        AnsiConsole.Write(new Rule());
 		
 		if (InitMode)
 		{
@@ -349,7 +338,6 @@ public sealed class AppRunner
     			return;
             }
 		}
-		
 		else if (HelpMode)
 		{
             AnsiConsole.MarkupLine(string.Empty);
@@ -441,7 +429,7 @@ public sealed class AppRunner
             if (AppState.CancellationTokenSource.IsCancellationRequested)
                 return;
             
-            AnsiConsole.MarkupLine($"[green]●[/] {prefix} [green]Success![/]");            
+            AnsiConsole.MarkupLine($"[green]●[/] {prefix} [bold green]Success![/]");            
         }
 
         #endregion
@@ -500,7 +488,7 @@ public sealed class AppRunner
                     return;
                 }
 
-                AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [bold green]Success![/]");
             }
 
             #endregion
@@ -555,7 +543,7 @@ public sealed class AppRunner
                     return;
                 }
 
-                AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [bold green]Success![/]");
             }
 
             #endregion
@@ -610,7 +598,7 @@ public sealed class AppRunner
                     return;
                 }
 
-                AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [bold green]Success![/]");
             }
 
             #endregion
@@ -678,7 +666,7 @@ public sealed class AppRunner
                     return;
                 }
 
-                AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [bold green]Success![/]");
             }
 
             #endregion
@@ -737,7 +725,7 @@ public sealed class AppRunner
                 return;
             }
 
-            AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
+            AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [bold green]Success![/]");
 
             #endregion
             
@@ -798,7 +786,7 @@ public sealed class AppRunner
                     return;
                 }
 
-                AnsiConsole.MarkupLine($"[green]●[/] {prefix} {AppState.Settings.Project.CopyFilesToPublishFolder.Count:N0} {AppState.Settings.Project.CopyFilesToPublishFolder.Count.Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} {AppState.Settings.Project.CopyFilesToPublishFolder.Count:N0} {AppState.Settings.Project.CopyFilesToPublishFolder.Count.Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... [bold green]Success![/]");
             }
             
             #endregion
@@ -852,7 +840,7 @@ public sealed class AppRunner
                     return;
                 }
 
-                AnsiConsole.MarkupLine($"[green]●[/] {prefix} {AppState.Settings.Project.CopyFoldersToPublishFolder.Count:N0} {AppState.Settings.Project.CopyFoldersToPublishFolder.Count.Pluralize("folder", "folders")} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} {AppState.Settings.Project.CopyFoldersToPublishFolder.Count:N0} {AppState.Settings.Project.CopyFoldersToPublishFolder.Count.Pluralize("folder", "folders")} ({Timer.Elapsed.FormatElapsedTime()})... [bold green]Success![/]");
             }
             
             #endregion
@@ -884,7 +872,7 @@ public sealed class AppRunner
                 return;
             }
 
-            AnsiConsole.MarkupLine($"[green]●[/] {prefix} {AppState.LocalFiles.Count(f => f.IsFile):N0} {AppState.LocalFiles.Count(f => f.IsFile).Pluralize("file", "files")}, {AppState.LocalFiles.Count(f => f.IsFolder):N0} {AppState.LocalFiles.Count(f => f.IsFolder).Pluralize("folder", "folders")} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
+            AnsiConsole.MarkupLine($"[green]●[/] {prefix} {AppState.LocalFiles.Count(f => f.IsFile):N0} {AppState.LocalFiles.Count(f => f.IsFile).Pluralize("file", "files")}, {AppState.LocalFiles.Count(f => f.IsFolder):N0} {AppState.LocalFiles.Count(f => f.IsFolder).Pluralize("folder", "folders")} ({Timer.Elapsed.FormatElapsedTime()})... [bold green]Success![/]");
             
             #endregion
 
@@ -984,8 +972,8 @@ public sealed class AppRunner
                 var bps = totalBytes / Timer.Elapsed.TotalSeconds;
 
                 AnsiConsole.MarkupLine(filesCopied != 0 ? 
-                    $"[green]●[/] {prefix} {filesCopied:N0} {filesCopied.Pluralize("file", "files")} copied ({Timer.Elapsed.FormatElapsedTime()}, {bps.FormatBytes()}/sec)... [green]Success![/]" : 
-                    $"[green]●[/] {prefix} Nothing to copy... [green]Success![/]");
+                    $"[green]●[/] {prefix} {filesCopied:N0} {filesCopied.Pluralize("file", "files")} copied ({Timer.Elapsed.FormatElapsedTime()}, {bps.FormatBytes()}/sec)... [bold green]Success![/]" : 
+                    $"[green]●[/] {prefix} Nothing to copy... [bold green]Success![/]");
             }
 
             #endregion
@@ -1034,7 +1022,7 @@ public sealed class AppRunner
                     return;
                 }
 
-                AnsiConsole.MarkupLine($"[green]●[/] {prefix} [green]Success![/]");
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} [bold green]Success![/]");
             }
 
             #endregion
@@ -1132,7 +1120,7 @@ public sealed class AppRunner
 
                 var bps = totalBytes / Timer.Elapsed.TotalSeconds;
 
-                AnsiConsole.MarkupLine($"[green]●[/] {prefix} {filesCopied:N0} {filesCopied.Pluralize("file", "files")} copied ({Timer.Elapsed.FormatElapsedTime()}, {bps.FormatBytes()}/sec)... [green]Success![/]");
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} {filesCopied:N0} {filesCopied.Pluralize("file", "files")} copied ({Timer.Elapsed.FormatElapsedTime()}, {bps.FormatBytes()}/sec)... [bold green]Success![/]");
             }
             else
             {
@@ -1142,7 +1130,7 @@ public sealed class AppRunner
                     AnsiConsole.MarkupLine(string.Empty);
                 }
 
-                AnsiConsole.MarkupLine($"[green]●[/] {prefix} No files to update... [green]Success![/]");
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} No files to update... [bold green]Success![/]");
             }
 
             #endregion
@@ -1176,7 +1164,7 @@ public sealed class AppRunner
                     return;
                 }
 
-                AnsiConsole.MarkupLine($"[green]●[/] {prefix} {AppState.ServerFiles.Count(f => f.IsFile):N0} {AppState.ServerFiles.Count(f => f.IsFile).Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} {AppState.ServerFiles.Count(f => f.IsFile):N0} {AppState.ServerFiles.Count(f => f.IsFile).Pluralize("file", "files")} ({Timer.Elapsed.FormatElapsedTime()})... [bold green]Success![/]");
             }
 
             #endregion
@@ -1254,7 +1242,7 @@ public sealed class AppRunner
                     return;
                 }
 
-                AnsiConsole.MarkupLine($"[green]●[/] {prefix} {filesRemoved:N0} {filesRemoved.Pluralize("file", "files")} deleted ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} {filesRemoved:N0} {filesRemoved.Pluralize("file", "files")} deleted ({Timer.Elapsed.FormatElapsedTime()})... [bold green]Success![/]");
             }
 
             #endregion
@@ -1295,7 +1283,7 @@ public sealed class AppRunner
                     return;
                 }
 
-                AnsiConsole.MarkupLine($"[green]●[/] {prefix} Website offline for {offlineTimer.Elapsed.FormatElapsedTime()}... [green]Success![/]");
+                AnsiConsole.MarkupLine($"[green]●[/] {prefix} Website offline for {offlineTimer.Elapsed.FormatElapsedTime()}... [bold green]Success![/]");
             }
 
             #endregion
@@ -1346,7 +1334,7 @@ public sealed class AppRunner
                 return;
             }
 
-            AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [green]Success![/]");
+            AnsiConsole.MarkupLine($"[green]●[/] {prefix} ({Timer.Elapsed.FormatElapsedTime()})... [bold green]Success![/]");
 
             #endregion
         }
@@ -1373,7 +1361,7 @@ public sealed class AppRunner
                 if (AppState.CancellationTokenSource.IsCancellationRequested || result == false)
                     AnsiConsole.MarkupLine($"[red]{prefix} Failed![/]");
                 else
-                    AnsiConsole.MarkupLine($"[green]●[/] {prefix} [green]Success![/]");
+                    AnsiConsole.MarkupLine($"[green]●[/] {prefix} [bold green]Success![/]");
             }
         }
     }
