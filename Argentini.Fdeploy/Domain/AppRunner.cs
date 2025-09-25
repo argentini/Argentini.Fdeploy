@@ -349,23 +349,23 @@ public sealed class AppRunner
                                     Although you can put server credentials in the deployment file under the ServerConnection section, it is recommended that you instead use a separate credentials file and exclude it from your source code repository (e.g. git)._
                                     The name of the file can be either `fdeploy-creds.yml` which is used for all deployment files in a given project folder, or use a deployment filename with `-creds` at the end (e.g. `fdeploy-staging-creds.yml`).
 
-                                    Command Line Usage:
+                                    [bold]Command Line Usage:[/]
                                     """;
 
             const string exampleText = """
-                                       fdeploy [init|help|version]
+                                       fdeploy [[init|help|version]]
                                        fdeploy
                                        fdeploy {path to fdeploy-{name}.yml file}
                                        fdeploy {name}
 
-                                       Commands:
+                                       [bold]Commands:[/]
                                        """;
 
             const string commandsText = """
-                                        init      : Create starter `fdeploy.yml` and `fdeploy-creds.yml` files in the
-                                                  : current working directory
-                                        version   : Show the Fdeploy version number
-                                        help      : Show this help message
+                                        init      [dim]:[/] Create starter `fdeploy.yml` and `fdeploy-creds.yml` files
+                                                    in the current working directory
+                                        version   [dim]:[/] Show the Fdeploy version number
+                                        help      [dim]:[/] Show this help message
                                         """;
 
             helpText.WriteToConsole(80);
